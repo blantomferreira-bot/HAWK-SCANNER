@@ -1,0 +1,17 @@
+[project]
+name = "hawk-scanner-scheduler"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "apscheduler>=3.10,<4.0",
+  "httpx>=0.28,<1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3,<9.0"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

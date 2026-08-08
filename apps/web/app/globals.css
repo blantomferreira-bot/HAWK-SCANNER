@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 222 43% 9%;
+    --card-foreground: 210 40% 98%;
+    --border: 217 28% 17%;
+    --input: 217 28% 17%;
+    --primary: 160 84% 39%;
+    --primary-foreground: 160 100% 5%;
+    --muted: 217 28% 14%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 28% 14%;
+    --accent-foreground: 210 40% 98%;
+    --ring: 160 84% 39%;
+  }
+
+  * { @apply border-border; }
+  body { @apply min-h-screen bg-background text-foreground antialiased; }
+}
+
+@layer components {
+  .panel { @apply rounded-xl border border-white/[0.07] bg-card/80 shadow-panel backdrop-blur-sm; }
+  .data-grid { background-size: 30px 30px; }
+  .number { font-variant-numeric: tabular-nums; }
+}

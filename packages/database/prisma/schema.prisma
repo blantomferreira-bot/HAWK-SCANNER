@@ -1,0 +1,770 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ANALYST
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELED
+  EXPIRED
+}
+
+enum AssetType {
+  CRYPTOCURRENCY
+  STABLECOIN
+  TOKEN
+  DERIVATIVE
+}
+
+enum MarketType {
+  SPOT
+  PERPETUAL
+  FUTURE
+  OPTION
+}
+
+enum MetricType {
+  PRICE
+  VOLUME
+  MARKET_CAP
+  LIQUIDITY
+  VOLATILITY
+  SPREAD
+  DEPTH
+  TVL
+  TRANSACTION_COUNT
+  ACTIVE_ADDRESSES
+  CUSTOM
+}
+
+enum MetricInterval {
+  ONE_MINUTE
+  FIVE_MINUTES
+  TEN_MINUTES
+  FIFTEEN_MINUTES
+  ONE_HOUR
+  FOUR_HOURS
+  ONE_DAY
+}
+
+enum ChainNetwork {
+  BITCOIN
+  ETHEREUM
+  SOLANA
+  BNB_CHAIN
+  ARBITRUM
+  BASE
+  POLYGON
+  AVALANCHE
+  OPTIMISM
+  OTHER
+}
+
+enum TransferType {
+  DEPOSIT
+  WITHDRAWAL
+  INTERNAL
+  ON_CHAIN
+}
+
+enum ScoreDirection {
+  BULLISH
+  BEARISH
+  NEUTRAL
+}
+
+enum AlertType {
+  SCORE_THRESHOLD
+  SCORE_CHANGE
+  PRICE_CHANGE
+  VOLUME_SPIKE
+  FUNDING_EXTREME
+  OPEN_INTEREST_CHANGE
+  LIQUIDATION_SPIKE
+  WHALE_TRANSFER
+}
+
+enum AlertChannel {
+  IN_APP
+  EMAIL
+  TELEGRAM
+  DISCORD
+  WEBHOOK
+}
+
+enum AlertStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum AlertEventStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SUPPRESSED
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum ScannerRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
+}
+
+enum MlTrainingStatus {
+  RUNNING
+  COMPLETED
+  WARMING_UP
+  FAILED
+}
+
+model User {
+  id              String        @id @default(cuid())
+  email           String        @unique @db.VarChar(320)
+  passwordHash    String        @map("password_hash")
+  displayName     String?       @map("display_name")
+  role            UserRole      @default(USER)
+  status          UserStatus    @default(PENDING)
+  emailVerifiedAt DateTime?     @map("email_verified_at") @db.Timestamptz(6)
+  lastLoginAt     DateTime?     @map("last_login_at") @db.Timestamptz(6)
+  timezone        String        @default("UTC")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime?     @map("deleted_at") @db.Timestamptz(6)
+
+  subscriptions   Subscription[]
+  watchlists      Watchlist[]
+  alerts          Alert[]
+  apiKeys         ApiKey[]
+  logs            AppLog[]
+
+  @@index([status])
+  @@index([role, status])
+  @@map("users")
+}
+
+model Plan {
+  id                  String        @id @default(cuid())
+  code                String        @unique
+  name                String
+  description         String?
+  billingInterval     BillingInterval @map("billing_interval")
+  priceCents          Int           @map("price_cents")
+  currency            String        @default("USD") @db.Char(3)
+  trialDays           Int           @default(0) @map("trial_days")
+  maxWatchlists       Int           @default(1) @map("max_watchlists")
+  maxAlerts           Int           @default(3) @map("max_alerts")
+  maxApiKeys          Int           @default(0) @map("max_api_keys")
+  entitlements        Json          @default("{}")
+  providerProductId   String?       @unique @map("provider_product_id")
+  providerPriceId     String?       @unique @map("provider_price_id")
+  isActive            Boolean       @default(true) @map("is_active")
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  subscriptions       Subscription[]
+
+  @@index([isActive, billingInterval])
+  @@map("plans")
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  userId                 String             @map("user_id")
+  planId                 String             @map("plan_id")
+  status                 SubscriptionStatus @default(TRIALING)
+  providerCustomerId     String?            @map("provider_customer_id")
+  providerSubscriptionId String?            @unique @map("provider_subscription_id")
+  currentPeriodStart     DateTime           @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd       DateTime           @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  canceledAt             DateTime?          @map("canceled_at") @db.Timestamptz(6)
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  plan                   Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+model Coin {
+  id              String      @id @default(cuid())
+  symbol          String
+  name            String
+  slug            String?     @unique
+  assetType       AssetType   @default(CRYPTOCURRENCY) @map("asset_type")
+  contractAddress String?     @map("contract_address")
+  network         ChainNetwork?
+  decimals        Int?
+  isActive        Boolean     @default(true) @map("is_active")
+  metadata        Json        @default("{}")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  baseMarkets     Market[]    @relation("MarketBaseCoin")
+  quoteMarkets    Market[]    @relation("MarketQuoteCoin")
+  metrics         Metric[]
+  history         History[]
+  scores          Score[]
+  scoreHistory    ScoreHistory[]
+  watchlistItems  WatchlistItem[]
+  alerts          Alert[]
+  wallets         Wallet[]
+  transfers       Transfer[]
+  scannerAlerts   ScannerAlert[]
+  mlFeatureSnapshots MlFeatureSnapshot[]
+  mlSimilarityScores MlSimilarityScore[]
+
+  @@unique([symbol, network, contractAddress])
+  @@index([symbol])
+  @@index([isActive, assetType])
+  @@map("coins")
+}
+
+model Exchange {
+  id             String      @id @default(cuid())
+  code           String      @unique
+  name           String
+  websiteUrl     String?     @map("website_url")
+  apiBaseUrl     String?     @map("api_base_url")
+  isActive       Boolean     @default(true) @map("is_active")
+  rateLimitRpm   Int?        @map("rate_limit_rpm")
+  metadata       Json        @default("{}")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  markets        Market[]
+  liquidations   Liquidation[]
+  transfers      Transfer[]
+
+  @@index([isActive])
+  @@map("exchanges")
+}
+
+model Market {
+  id          String      @id @default(cuid())
+  exchangeId  String      @map("exchange_id")
+  baseCoinId  String      @map("base_coin_id")
+  quoteCoinId String      @map("quote_coin_id")
+  symbol      String
+  marketType  MarketType  @map("market_type")
+  isActive    Boolean     @default(true) @map("is_active")
+  metadata    Json        @default("{}")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  exchange    Exchange    @relation(fields: [exchangeId], references: [id], onDelete: Restrict)
+  baseCoin    Coin        @relation("MarketBaseCoin", fields: [baseCoinId], references: [id], onDelete: Restrict)
+  quoteCoin   Coin        @relation("MarketQuoteCoin", fields: [quoteCoinId], references: [id], onDelete: Restrict)
+  metrics     Metric[]
+  history     History[]
+  funding     Funding[]
+  openInterest OpenInterest[]
+  liquidations Liquidation[]
+  scores      Score[]
+  scoreHistory ScoreHistory[]
+
+  @@unique([exchangeId, symbol, marketType])
+  @@index([baseCoinId, marketType, isActive])
+  @@index([exchangeId, isActive])
+  @@map("markets")
+}
+
+model Metric {
+  id          BigInt         @id @default(autoincrement())
+  coinId      String          @map("coin_id")
+  marketId    String?         @map("market_id")
+  type        MetricType
+  interval    MetricInterval
+  value       Decimal         @db.Decimal(38, 18)
+  source      String
+  observedAt  DateTime        @map("observed_at") @db.Timestamptz(6)
+  metadata    Json            @default("{}")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coin        Coin            @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  market      Market?         @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([coinId, marketId, type, interval, source, observedAt])
+  @@index([coinId, type, interval, observedAt(sort: Desc)])
+  @@index([marketId, type, observedAt(sort: Desc)])
+  @@map("metrics")
+}
+
+model Funding {
+  id          BigInt    @id @default(autoincrement())
+  marketId    String    @map("market_id")
+  rate        Decimal   @db.Decimal(20, 12)
+  markPrice   Decimal?  @map("mark_price") @db.Decimal(38, 18)
+  nextFundingAt DateTime? @map("next_funding_at") @db.Timestamptz(6)
+  source      String
+  observedAt  DateTime  @map("observed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  market      Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([marketId, source, observedAt])
+  @@index([marketId, observedAt(sort: Desc)])
+  @@map("funding")
+}
+
+model OpenInterest {
+  id            BigInt    @id @default(autoincrement())
+  marketId      String    @map("market_id")
+  value         Decimal   @db.Decimal(38, 18)
+  valueUsd      Decimal?  @map("value_usd") @db.Decimal(38, 18)
+  source        String
+  observedAt    DateTime  @map("observed_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  market        Market    @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([marketId, source, observedAt])
+  @@index([marketId, observedAt(sort: Desc)])
+  @@map("open_interest")
+}
+
+model Liquidation {
+  id            String    @id @default(cuid())
+  marketId      String?   @map("market_id")
+  exchangeId    String?   @map("exchange_id")
+  side          String
+  price         Decimal?  @db.Decimal(38, 18)
+  quantity      Decimal?  @db.Decimal(38, 18)
+  valueUsd      Decimal?  @map("value_usd") @db.Decimal(38, 18)
+  sourceEventId String?   @unique @map("source_event_id")
+  source        String
+  liquidatedAt  DateTime  @map("liquidated_at") @db.Timestamptz(6)
+  metadata      Json      @default("{}")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  market        Market?   @relation(fields: [marketId], references: [id], onDelete: SetNull)
+  exchange      Exchange? @relation(fields: [exchangeId], references: [id], onDelete: SetNull)
+
+  @@index([marketId, liquidatedAt(sort: Desc)])
+  @@index([exchangeId, liquidatedAt(sort: Desc)])
+  @@index([liquidatedAt(sort: Desc)])
+  @@map("liquidations")
+}
+
+model Wallet {
+  id              String        @id @default(cuid())
+  address         String
+  network         ChainNetwork
+  coinId          String?       @map("coin_id")
+  label           String?
+  entityName      String?       @map("entity_name")
+  isExchange      Boolean       @default(false) @map("is_exchange")
+  metadata        Json          @default("{}")
+  firstSeenAt     DateTime?     @map("first_seen_at") @db.Timestamptz(6)
+  lastSeenAt      DateTime?     @map("last_seen_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  coin            Coin?         @relation(fields: [coinId], references: [id], onDelete: SetNull)
+  whale           Whale?
+  transfersSent   Transfer[]    @relation("TransfersFromWallet")
+  transfersReceived Transfer[]  @relation("TransfersToWallet")
+
+  @@unique([address, network])
+  @@index([network, isExchange])
+  @@map("wallets")
+}
+
+model Whale {
+  id              String    @id @default(cuid())
+  walletId        String    @unique @map("wallet_id")
+  classification  String    @default("UNKNOWN")
+  confidence      Decimal   @default(0) @db.Decimal(5, 4)
+  estimatedValueUsd Decimal? @map("estimated_value_usd") @db.Decimal(38, 18)
+  tags            String[]  @default([])
+  metadata        Json      @default("{}")
+  lastEvaluatedAt DateTime? @map("last_evaluated_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  wallet          Wallet    @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([classification, confidence])
+  @@map("whales")
+}
+
+model Transfer {
+  id              String       @id @default(cuid())
+  coinId          String       @map("coin_id")
+  fromWalletId    String?      @map("from_wallet_id")
+  toWalletId      String?      @map("to_wallet_id")
+  exchangeId      String?      @map("exchange_id")
+  network         ChainNetwork
+  type            TransferType
+  transactionHash String?      @map("transaction_hash")
+  amount          Decimal      @db.Decimal(38, 18)
+  valueUsd        Decimal?     @map("value_usd") @db.Decimal(38, 18)
+  occurredAt      DateTime     @map("occurred_at") @db.Timestamptz(6)
+  source          String
+  metadata        Json         @default("{}")
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coin            Coin         @relation(fields: [coinId], references: [id], onDelete: Restrict)
+  fromWallet      Wallet?      @relation("TransfersFromWallet", fields: [fromWalletId], references: [id], onDelete: SetNull)
+  toWallet        Wallet?      @relation("TransfersToWallet", fields: [toWalletId], references: [id], onDelete: SetNull)
+  exchange        Exchange?    @relation(fields: [exchangeId], references: [id], onDelete: SetNull)
+
+  @@unique([network, transactionHash])
+  @@index([coinId, occurredAt(sort: Desc)])
+  @@index([fromWalletId, occurredAt(sort: Desc)])
+  @@index([toWalletId, occurredAt(sort: Desc)])
+  @@index([valueUsd, occurredAt(sort: Desc)])
+  @@map("transfers")
+}
+
+model Score {
+  id            String         @id @default(cuid())
+  coinId        String         @map("coin_id")
+  marketId      String?        @map("market_id")
+  modelVersion  String         @map("model_version")
+  value         Decimal        @db.Decimal(6, 3)
+  confidence    Decimal        @db.Decimal(5, 4)
+  direction     ScoreDirection @default(NEUTRAL)
+  factors       Json           @default("{}")
+  calculatedAt  DateTime       @map("calculated_at") @db.Timestamptz(6)
+  expiresAt     DateTime?      @map("expires_at") @db.Timestamptz(6)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coin          Coin           @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  market        Market?        @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  scannerAlerts ScannerAlert[]
+
+  @@unique([coinId, marketId, modelVersion, calculatedAt])
+  @@index([value(sort: Desc), confidence(sort: Desc), calculatedAt(sort: Desc)])
+  @@index([coinId, calculatedAt(sort: Desc)])
+  @@map("scores")
+}
+
+model ScoreHistory {
+  id            BigInt         @id @default(autoincrement())
+  coinId        String         @map("coin_id")
+  marketId      String?        @map("market_id")
+  modelVersion  String         @map("model_version")
+  value         Decimal        @db.Decimal(6, 3)
+  confidence    Decimal        @db.Decimal(5, 4)
+  direction     ScoreDirection @default(NEUTRAL)
+  factors       Json           @default("{}")
+  calculatedAt  DateTime       @map("calculated_at") @db.Timestamptz(6)
+
+  coin          Coin           @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  market        Market?        @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@index([coinId, modelVersion, calculatedAt(sort: Desc)])
+  @@index([marketId, modelVersion, calculatedAt(sort: Desc)])
+  @@map("score_history")
+}
+
+model History {
+  id          BigInt    @id @default(autoincrement())
+  coinId      String    @map("coin_id")
+  marketId    String?   @map("market_id")
+  interval    MetricInterval
+  open        Decimal   @db.Decimal(38, 18)
+  high        Decimal   @db.Decimal(38, 18)
+  low         Decimal   @db.Decimal(38, 18)
+  close       Decimal   @db.Decimal(38, 18)
+  volume      Decimal?  @db.Decimal(38, 18)
+  quoteVolume Decimal?  @map("quote_volume") @db.Decimal(38, 18)
+  source      String
+  openedAt    DateTime  @map("opened_at") @db.Timestamptz(6)
+  closedAt    DateTime  @map("closed_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coin        Coin      @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  market      Market?   @relation(fields: [marketId], references: [id], onDelete: Cascade)
+
+  @@unique([coinId, marketId, interval, source, openedAt])
+  @@index([coinId, interval, openedAt(sort: Desc)])
+  @@index([marketId, interval, openedAt(sort: Desc)])
+  @@map("history")
+}
+
+model Watchlist {
+  id          String          @id @default(cuid())
+  userId      String          @map("user_id")
+  name        String
+  description String?
+  isDefault   Boolean         @default(false) @map("is_default")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items       WatchlistItem[]
+
+  @@unique([userId, name])
+  @@index([userId, isDefault])
+  @@map("watchlists")
+}
+
+model WatchlistItem {
+  id          String    @id @default(cuid())
+  watchlistId String    @map("watchlist_id")
+  coinId      String    @map("coin_id")
+  note        String?
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  coin        Coin      @relation(fields: [coinId], references: [id], onDelete: Cascade)
+
+  @@unique([watchlistId, coinId])
+  @@index([coinId])
+  @@map("watchlist_items")
+}
+
+model Alert {
+  id            String       @id @default(cuid())
+  userId        String       @map("user_id")
+  coinId        String?      @map("coin_id")
+  type          AlertType
+  channel       AlertChannel
+  status        AlertStatus  @default(ACTIVE)
+  name          String
+  conditions    Json
+  // Channel-specific recipient or endpoint; encrypted at application level.
+  destination   String?
+  cooldownSecs  Int          @default(900) @map("cooldown_secs")
+  lastTriggeredAt DateTime?  @map("last_triggered_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coin          Coin?        @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  events        AlertEvent[]
+
+  @@index([userId, status])
+  @@index([coinId, type, status])
+  @@map("alerts")
+}
+
+model AlertEvent {
+  id          String           @id @default(cuid())
+  alertId     String           @map("alert_id")
+  status      AlertEventStatus @default(PENDING)
+  payload     Json
+  error       String?
+  triggeredAt DateTime         @default(now()) @map("triggered_at") @db.Timestamptz(6)
+  deliveredAt DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  alert       Alert            @relation(fields: [alertId], references: [id], onDelete: Cascade)
+
+  @@index([alertId, triggeredAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("alert_events")
+}
+
+model AppLog {
+  id            BigInt    @id @default(autoincrement())
+  userId        String?   @map("user_id")
+  level         LogLevel
+  service       String
+  event         String
+  requestId     String?   @map("request_id")
+  traceId       String?   @map("trace_id")
+  jobId         String?   @map("job_id")
+  message       String
+  context       Json      @default("{}")
+  occurredAt    DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([level, occurredAt(sort: Desc)])
+  @@index([service, occurredAt(sort: Desc)])
+  @@index([requestId])
+  @@index([userId, occurredAt(sort: Desc)])
+  @@map("logs")
+}
+
+model ApiKey {
+  id            String       @id @default(cuid())
+  userId        String       @map("user_id")
+  name          String
+  prefix        String       @unique
+  secretHash    String       @map("secret_hash")
+  scopes        String[]     @default([])
+  status        ApiKeyStatus @default(ACTIVE)
+  lastUsedAt    DateTime?    @map("last_used_at") @db.Timestamptz(6)
+  expiresAt     DateTime?    @map("expires_at") @db.Timestamptz(6)
+  revokedAt     DateTime?    @map("revoked_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@map("api_keys")
+}
+
+model ScannerRun {
+  id          String           @id
+  status      ScannerRunStatus @default(RUNNING)
+  startedAt   DateTime         @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime?        @map("completed_at") @db.Timestamptz(6)
+  coinsSeen   Int              @default(0) @map("coins_seen")
+  scoresSaved Int              @default(0) @map("scores_saved")
+  alertsMade  Int              @default(0) @map("alerts_made")
+  error       String?
+  metadata    Json             @default("{}")
+
+  alerts      ScannerAlert[]
+
+  @@index([status, startedAt(sort: Desc)])
+  @@map("scanner_runs")
+}
+
+model ScannerAlert {
+  id           String           @id
+  scannerRunId String           @map("scanner_run_id")
+  coinId       String           @map("coin_id")
+  scoreId      String           @map("score_id")
+  scoreValue   Decimal          @map("score_value") @db.Decimal(6, 3)
+  threshold    Decimal          @db.Decimal(6, 3)
+  status       DeliveryStatus   @default(PENDING)
+  payload      Json             @default("{}")
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  scannerRun   ScannerRun       @relation(fields: [scannerRunId], references: [id], onDelete: Cascade)
+  coin         Coin             @relation(fields: [coinId], references: [id], onDelete: Cascade)
+  score        Score            @relation(fields: [scoreId], references: [id], onDelete: Cascade)
+  deliveries   ScannerAlertDelivery[]
+
+  @@unique([coinId, scoreId])
+  @@index([createdAt(sort: Desc)])
+  @@map("scanner_alerts")
+}
+
+model ScannerAlertDelivery {
+  id             String         @id
+  scannerAlertId String         @map("scanner_alert_id")
+  channel        AlertChannel
+  destination    String
+  status         DeliveryStatus @default(PENDING)
+  error          String?
+  attemptedAt    DateTime?      @map("attempted_at") @db.Timestamptz(6)
+  deliveredAt    DateTime?      @map("delivered_at") @db.Timestamptz(6)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  scannerAlert   ScannerAlert   @relation(fields: [scannerAlertId], references: [id], onDelete: Cascade)
+
+  @@unique([scannerAlertId, channel, destination])
+  @@index([status, createdAt])
+  @@map("scanner_alert_deliveries")
+}
+
+model MlFeatureSnapshot {
+  id             String   @id
+  coinId         String   @map("coin_id")
+  observedAt     DateTime @map("observed_at") @db.Timestamptz(6)
+  windowStartAt  DateTime @map("window_start_at") @db.Timestamptz(6)
+  windowDays     Int      @map("window_days")
+  referencePrice Decimal? @map("reference_price") @db.Decimal(38, 18)
+  features       Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  coin           Coin     @relation(fields: [coinId], references: [id], onDelete: Cascade)
+
+  @@unique([coinId, observedAt, windowDays])
+  @@index([observedAt(sort: Desc)])
+  @@map("ml_feature_snapshots")
+}
+
+model MlTrainingRun {
+  id              String           @id
+  status          MlTrainingStatus @default(RUNNING)
+  modelType       String           @map("model_type")
+  labelDefinition String           @map("label_definition")
+  windowDays      Int              @map("window_days")
+  featureNames    String[]         @map("feature_names")
+  trainingStartAt DateTime?        @map("training_start_at") @db.Timestamptz(6)
+  trainingEndAt   DateTime?        @map("training_end_at") @db.Timestamptz(6)
+  trainedAt       DateTime?        @map("trained_at") @db.Timestamptz(6)
+  samples         Int              @default(0)
+  positiveSamples Int              @default(0) @map("positive_samples")
+  metrics         Json             @default("{}")
+  hyperparameters Json             @default("{}")
+  artifactUri     String?          @map("artifact_uri")
+  error           String?
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  similarityScores MlSimilarityScore[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("ml_training_runs")
+}
+
+model MlSimilarityScore {
+  id              String        @id
+  trainingRunId   String        @map("training_run_id")
+  coinId          String        @map("coin_id")
+  score           Decimal       @db.Decimal(6, 3)
+  modelProbability Decimal      @map("model_probability") @db.Decimal(10, 8)
+  leafAgreement   Decimal       @map("leaf_agreement") @db.Decimal(10, 8)
+  calculatedAt    DateTime      @map("calculated_at") @db.Timestamptz(6)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  trainingRun     MlTrainingRun @relation(fields: [trainingRunId], references: [id], onDelete: Cascade)
+  coin            Coin          @relation(fields: [coinId], references: [id], onDelete: Cascade)
+
+  @@unique([trainingRunId, coinId])
+  @@index([score(sort: Desc), calculatedAt(sort: Desc)])
+  @@map("ml_similarity_scores")
+}

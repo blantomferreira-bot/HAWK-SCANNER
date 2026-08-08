@@ -1,0 +1,1 @@
+"""HAWK SCANNER FastAPI application."""

@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.git/
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+work/
+outputs/
+model-artifacts/
+*.pyc
