@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -150,7 +151,18 @@ class ScannerService:
             values["ask_depth"] = item.ask_depth
             if item.price is not None and item.coin_id not in prices:
                 prices[item.coin_id] = item.price
-        return {coin_id: RawMarketState(**values) for coin_id, values in source.items()}, prices
+        states = {
+            coin_id: RawMarketState(**values)
+            for coin_id, values in source.items()
+            if ScannerService._is_eligible_for_ranking(values)
+        }
+        return states, {coin_id: price for coin_id, price in prices.items() if coin_id in states}
+
+    @staticmethod
+    def _is_eligible_for_ranking(values: dict[str, float | None]) -> bool:
+        """Require a current, positive market-cap and spot-liquidity observation before scoring."""
+        baseline = (values.get("market_cap"), values.get("spot_volume"))
+        return all(value is not None and math.isfinite(value) and value > 0 for value in baseline)
 
     async def _deliver(self, repository: ScannerRepository, alert_id: str, message: NotificationMessage) -> bool:
         outcomes = await asyncio.gather(self.notifier.telegram(message), self.notifier.discord(message), self.notifier.email(message))

@@ -85,15 +85,30 @@ async def ranking(
                  SELECT DISTINCT ON (coin_id) coin_id, value AS price
                  FROM metrics WHERE type = 'PRICE' AND market_id IS NULL
                  ORDER BY coin_id, observed_at DESC
-               ), latest_volume AS (
+               ), latest_coin_volume AS (
                  SELECT DISTINCT ON (coin_id) coin_id, value AS volume
                  FROM metrics WHERE type = 'VOLUME' AND market_id IS NULL
                  ORDER BY coin_id, observed_at DESC
+               ), latest_market_volume_by_market AS (
+                 SELECT DISTINCT ON (coin_id, market_id) coin_id, market_id, value AS volume
+                 FROM metrics WHERE type = 'VOLUME' AND market_id IS NOT NULL
+                 ORDER BY coin_id, market_id, observed_at DESC
+               ), latest_market_volume AS (
+                 SELECT coin_id, SUM(volume) AS volume
+                 FROM latest_market_volume_by_market
+                 GROUP BY coin_id
+               ), latest_market_cap AS (
+                 SELECT DISTINCT ON (coin_id) coin_id, value AS market_cap
+                 FROM metrics WHERE type = 'MARKET_CAP' AND market_id IS NULL
+                 ORDER BY coin_id, observed_at DESC
                )
-               SELECT ls.*, lp.price, lv.volume
+               SELECT ls.*, lp.price, COALESCE(NULLIF(lcv.volume, 0), lmv.volume) AS volume, lmc.market_cap
                FROM latest_scores ls
+               JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id AND lmc.market_cap > 0
                LEFT JOIN latest_price lp ON lp.coin_id = ls.coin_id
-               LEFT JOIN latest_volume lv ON lv.coin_id = ls.coin_id
+               LEFT JOIN latest_coin_volume lcv ON lcv.coin_id = ls.coin_id
+               LEFT JOIN latest_market_volume lmv ON lmv.coin_id = ls.coin_id
+               WHERE COALESCE(NULLIF(lcv.volume, 0), lmv.volume, 0) > 0
                ORDER BY value DESC, confidence DESC, calculated_at DESC
                LIMIT :limit""",
             {"model_version": model_version, "direction": direction, "limit": limit},
