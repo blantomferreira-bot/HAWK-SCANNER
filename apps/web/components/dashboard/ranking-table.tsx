@@ -22,6 +22,8 @@ type RankedAsset = {
   signal: "BULLISH" | "BEARISH" | "NEUTRAL";
 };
 
+const productionApiBaseUrl = "https://splendid-wholeness-production-f000.up.railway.app/api/v1";
+
 function asNumber(value: unknown): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -42,7 +44,7 @@ export function RankingTable() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? productionApiBaseUrl;
 
     async function loadRanking() {
       try {
@@ -83,7 +85,9 @@ export function RankingTable() {
     ? "Loading calibrated ranking…"
     : loadState === "error"
       ? "API unavailable. Check the HAWK SCANNER API health endpoint."
-      : "No assets match the active filters.";
+      : rows.length === 0 && !query && tab === "All signals"
+        ? "The first public evidence window is being collected. The ranking will appear after dynamic calibration."
+        : "No assets match the active filters.";
 
   return <section className="panel overflow-hidden">
     <div className="flex flex-col gap-4 border-b border-white/[.07] p-5 lg:flex-row lg:items-center lg:justify-between">
