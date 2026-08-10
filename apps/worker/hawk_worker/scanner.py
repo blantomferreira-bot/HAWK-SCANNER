@@ -112,7 +112,7 @@ class ScannerService:
 
     async def _refresh_catalog(self, repository: ScannerRepository, lock_client) -> None:
         """Initialize and then refresh the tradable universe daily, not every scan."""
-        catalog_key = "hawk-scanner:catalog:v3"
+        catalog_key = "hawk-scanner:catalog:v4"
         if await lock_client.get(catalog_key):
             return
         catalog_coins = []

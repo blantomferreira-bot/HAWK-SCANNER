@@ -31,10 +31,13 @@ class CoinGeckoPublicProvider:
         "tether", "usd-coin", "dai", "usd1", "usd1-wlfi", "first-digital-usd", "paypal-usd", "ethena-usde", "usds",
         "global-dollar", "frax", "true-usd", "paxos-standard", "liquity-usd", "usdd", "usde",
     })
-    fallback_non_speculative_ids = frozenset({"pax-gold", "tether-gold"})
+    fallback_non_speculative_ids = frozenset({
+        "pax-gold", "tether-gold", "spacex-bstocks-tokenized-stock", "micron-technology-bstock",
+        "blackrock-usd-institutional-digital-liquidity-fund",
+    })
     fallback_memecoin_ids = frozenset({
         "dogecoin", "shiba-inu", "pepe", "bonk", "dogwifcoin", "floki", "official-trump", "spx6900",
-        "brett", "popcat", "mog-coin", "cat-in-a-dogs-world", "goatseus-maximus", "fartcoin",
+        "brett", "popcat", "mog-coin", "cat-in-a-dogs-world", "goatseus-maximus", "fartcoin", "banana-for-scale-2",
     })
 
     def __init__(self, api_key: str = "") -> None:
@@ -108,7 +111,7 @@ class CoinGeckoPublicProvider:
                     continue
                 if "stablecoin" in name:
                     targets.append((category_id, "stablecoin", True))
-                elif "real world asset" in name or "tokenized treasury" in name or "tokenized fund" in name:
+                elif "real world asset" in name or "rwa" in name or "tokenized" in name:
                     targets.append((category_id, "non-speculative-category", False))
                 elif "meme" in name:
                     targets.append((category_id, "memecoin-category", False))
