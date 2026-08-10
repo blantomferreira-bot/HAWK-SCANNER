@@ -30,6 +30,9 @@ class CatalogCoin:
     symbol: str
     name: str
     market_cap_rank: int | None
+    asset_type: str = "CRYPTOCURRENCY"
+    scanner_eligible: bool = True
+    classification_reason: str | None = None
 
 
 @dataclass(frozen=True)

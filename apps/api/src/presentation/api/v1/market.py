@@ -75,11 +75,13 @@ async def ranking(
             """WITH latest_scores AS (
                  SELECT DISTINCT ON (s.coin_id, COALESCE(s.market_id, ''))
                         s.id, s.coin_id, s.market_id, s.model_version, s.value, s.confidence, s.direction,
-                        s.factors, s.calculated_at, c.symbol, c.name
+                        s.factors, s.calculated_at, c.symbol, c.name, c.asset_type, c.metadata
                  FROM scores s
                  JOIN coins c ON c.id = s.coin_id
                  WHERE (CAST(:model_version AS text) IS NULL OR s.model_version = CAST(:model_version AS text))
                    AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
+                   AND c.asset_type <> 'STABLECOIN'
+                   AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (
                  SELECT DISTINCT ON (coin_id) coin_id, value AS price
@@ -101,9 +103,15 @@ async def ranking(
                  SELECT DISTINCT ON (coin_id) coin_id, value AS market_cap
                  FROM metrics WHERE type = 'MARKET_CAP' AND market_id IS NULL
                  ORDER BY coin_id, observed_at DESC
+               ), tradable_spot_coins AS (
+                 SELECT DISTINCT m.base_coin_id AS coin_id
+                 FROM markets m
+                 JOIN exchanges e ON e.id = m.exchange_id
+                 WHERE m.is_active = true AND e.is_active = true AND m.market_type = 'SPOT'
                )
                SELECT ls.*, lp.price, COALESCE(NULLIF(lcv.volume, 0), lmv.volume) AS volume, lmc.market_cap
                FROM latest_scores ls
+               JOIN tradable_spot_coins tsc ON tsc.coin_id = ls.coin_id
                JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id AND lmc.market_cap > 0
                LEFT JOIN latest_price lp ON lp.coin_id = ls.coin_id
                LEFT JOIN latest_coin_volume lcv ON lcv.coin_id = ls.coin_id

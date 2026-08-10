@@ -26,6 +26,11 @@ class CoinGeckoPublicProvider:
     """Coin catalog and bulk public market data, fetched in API-safe batches."""
 
     endpoint = "https://api.coingecko.com/api/v3/coins/markets"
+    categories_endpoint = "https://api.coingecko.com/api/v3/coins/categories/list"
+    fallback_stablecoin_ids = frozenset({
+        "tether", "usd-coin", "dai", "usd1", "first-digital-usd", "paypal-usd", "ethena-usde", "usds",
+        "global-dollar", "frax", "true-usd", "paxos-standard", "liquity-usd", "usdd", "usde",
+    })
 
     def __init__(self, api_key: str = "") -> None:
         self.api_key = api_key
@@ -39,6 +44,7 @@ class CoinGeckoPublicProvider:
         if pages < 1:
             raise ValueError("COINGECKO_CATALOG_PAGES must be at least 1")
         async with httpx.AsyncClient(timeout=30) as client:
+            classifications = await self._catalog_classifications(client)
             responses = []
             for page in range(1, pages + 1):
                 try:
@@ -63,10 +69,52 @@ class CoinGeckoPublicProvider:
                 symbol=str(item["symbol"]).upper(),
                 name=str(item["name"]),
                 market_cap_rank=item.get("market_cap_rank"),
+                asset_type="STABLECOIN" if classifications.get(str(item["id"]), {}).get("stablecoin") else "CRYPTOCURRENCY",
+                scanner_eligible=not classifications.get(str(item["id"]), {}).get("excluded", False),
+                classification_reason=classifications.get(str(item["id"]), {}).get("reason"),
             )
             for item in responses
             if item.get("id") and item.get("symbol") and item.get("name")
         ]
+
+    async def _catalog_classifications(self, client: httpx.AsyncClient) -> dict[str, dict[str, Any]]:
+        """Classify the scanner universe from CoinGecko categories, with a stablecoin safety fallback."""
+        classifications: dict[str, dict[str, Any]] = {
+            coin_id: {"stablecoin": True, "excluded": True, "reason": "stablecoin-fallback"}
+            for coin_id in self.fallback_stablecoin_ids
+        }
+        try:
+            categories_response = await client.get(self.categories_endpoint, headers=self.headers)
+            categories_response.raise_for_status()
+            categories = categories_response.json()
+            targets: list[tuple[str, str, bool]] = []
+            for category in categories:
+                category_id = str(category.get("category_id", ""))
+                name = str(category.get("name", "")).lower()
+                if not category_id:
+                    continue
+                if "stablecoin" in name:
+                    targets.append((category_id, "stablecoin", True))
+                elif "real world asset" in name or "tokenized treasury" in name or "tokenized fund" in name:
+                    targets.append((category_id, "non-speculative-category", False))
+            for category_id, reason, is_stablecoin in targets:
+                response = await client.get(
+                    self.endpoint,
+                    params={"vs_currency": "usd", "category": category_id, "per_page": 250, "page": 1},
+                    headers=self.headers,
+                )
+                response.raise_for_status()
+                for item in response.json():
+                    coin_id = item.get("id")
+                    if coin_id:
+                        classifications[str(coin_id)] = {
+                            "stablecoin": is_stablecoin,
+                            "excluded": True,
+                            "reason": reason,
+                        }
+        except httpx.HTTPError as error:
+            logger.warning("CoinGecko universe classification unavailable; applying stablecoin safety fallback", exc_info=error)
+        return classifications
 
     async def fetch(self, coins: list[dict[str, Any]]) -> list[CoinSnapshot]:
         mapped = {

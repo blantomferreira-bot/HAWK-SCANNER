@@ -59,7 +59,13 @@ class ScannerService:
                 coin_snapshots, market_snapshots = await self._public_snapshots(coins, markets)
                 await repository.persist_coin_snapshots(coin_snapshots, started_at)
                 await repository.persist_market_snapshots(market_snapshots, started_at)
-                states, current_prices = self._states(coin_snapshots, market_snapshots)
+                excluded_coin_ids = {
+                    coin["id"]
+                    for coin in coins
+                    if coin.get("asset_type") == "STABLECOIN"
+                    or (isinstance(coin.get("metadata"), dict) and coin["metadata"].get("scanner_eligible") is False)
+                }
+                states, current_prices = self._states(coin_snapshots, market_snapshots, excluded_coin_ids)
                 realized_returns = {
                     coin_id: current_prices[coin_id] / previous_prices[coin_id] - 1
                     for coin_id in current_prices if coin_id in previous_prices and previous_prices[coin_id] > 0
@@ -100,7 +106,7 @@ class ScannerService:
 
     async def _refresh_catalog(self, repository: ScannerRepository, lock_client) -> None:
         """Initialize and then refresh the tradable universe daily, not every scan."""
-        catalog_key = "hawk-scanner:catalog:v1"
+        catalog_key = "hawk-scanner:catalog:v2"
         if await lock_client.get(catalog_key):
             return
         catalog_coins = []
@@ -136,9 +142,12 @@ class ScannerService:
         return coin_snapshots, market_snapshots
 
     @staticmethod
-    def _states(coin_snapshots: list[CoinSnapshot], market_snapshots: list[MarketSnapshot]) -> tuple[dict[str, RawMarketState], dict[str, float]]:
+    def _states(
+        coin_snapshots: list[CoinSnapshot], market_snapshots: list[MarketSnapshot], excluded_coin_ids: set[str] | None = None,
+    ) -> tuple[dict[str, RawMarketState], dict[str, float]]:
         source: dict[str, dict[str, float | None]] = {}
         prices: dict[str, float] = {}
+        actively_traded_coin_ids: set[str] = set()
         for item in coin_snapshots:
             source[item.coin_id] = {"market_cap": item.market_cap, "spot_volume": item.spot_volume}
             if item.price is not None:
@@ -151,10 +160,13 @@ class ScannerService:
             values["ask_depth"] = item.ask_depth
             if item.price is not None and item.coin_id not in prices:
                 prices[item.coin_id] = item.price
+            if item.spot_volume is not None and math.isfinite(item.spot_volume) and item.spot_volume > 0:
+                actively_traded_coin_ids.add(item.coin_id)
+        blocked = excluded_coin_ids or set()
         states = {
             coin_id: RawMarketState(**values)
             for coin_id, values in source.items()
-            if ScannerService._is_eligible_for_ranking(values)
+            if coin_id not in blocked and coin_id in actively_traded_coin_ids and ScannerService._is_eligible_for_ranking(values)
         }
         return states, {coin_id: price for coin_id, price in prices.items() if coin_id in states}
 

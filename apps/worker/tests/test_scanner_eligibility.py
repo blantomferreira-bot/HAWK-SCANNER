@@ -9,7 +9,11 @@ def test_states_exclude_assets_without_positive_market_cap_or_volume():
             CoinSnapshot("no-volume", "NOV", 5.0, 1_000_000.0, 0.0, "coingecko"),
             CoinSnapshot("no-market-cap", "NMC", 3.0, 0.0, 100_000.0, "coingecko"),
         ],
-        [],
+        [
+            MarketSnapshot("eligible", "eligible-market", "ELGUSDT", 12.0, 50_000.0, None, None, None, "binance"),
+            MarketSnapshot("no-volume", "no-volume-market", "NOVUSDT", 5.0, 0.0, None, None, None, "binance"),
+            MarketSnapshot("no-market-cap", "no-market-cap-market", "NMCUSDT", 3.0, 100_000.0, None, None, None, "binance"),
+        ],
     )
 
     assert set(states) == {"eligible"}
@@ -23,3 +27,13 @@ def test_binance_volume_can_complete_an_otherwise_eligible_coin_snapshot():
     )
 
     assert states["eligible"].spot_volume == 200_000.0
+
+
+def test_states_exclude_pegged_or_other_ineligible_universe_assets():
+    states, _ = ScannerService._states(
+        [CoinSnapshot("stable", "USDX", 1.0, 1_000_000.0, 500_000.0, "coingecko")],
+        [MarketSnapshot("stable", "stable-market", "USDXUSDT", 1.0, 500_000.0, None, None, None, "binance")],
+        {"stable"},
+    )
+
+    assert states == {}

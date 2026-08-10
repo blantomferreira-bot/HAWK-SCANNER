@@ -36,7 +36,7 @@ class ScannerRepository:
 
     async def active_coins(self) -> list[dict[str, Any]]:
         result = await self.session.execute(text(
-            "SELECT id, symbol, metadata FROM coins WHERE is_active = true ORDER BY symbol"
+            "SELECT id, symbol, asset_type, metadata FROM coins WHERE is_active = true ORDER BY symbol"
         ))
         return [dict(row) for row in result.mappings().all()]
 
@@ -44,13 +44,19 @@ class ScannerRepository:
         """Stable external-id derived keys make catalog refreshes idempotent."""
         for coin in coins:
             coin_id = f"cng_{sha256(coin.external_id.encode()).hexdigest()[:24]}"
-            metadata = json.dumps({"coingecko_id": coin.external_id, "market_cap_rank": coin.market_cap_rank})
+            metadata = json.dumps({
+                "coingecko_id": coin.external_id,
+                "market_cap_rank": coin.market_cap_rank,
+                "scanner_eligible": coin.scanner_eligible,
+                "classification_reason": coin.classification_reason,
+            })
             await self.session.execute(text(
                 """INSERT INTO coins (id, symbol, name, slug, asset_type, is_active, metadata, created_at, updated_at)
-                   VALUES (:id, :symbol, :name, :slug, 'CRYPTOCURRENCY', true, CAST(:metadata AS jsonb), now(), now())
+                   VALUES (:id, :symbol, :name, :slug, CAST(:asset_type AS "AssetType"), true, CAST(:metadata AS jsonb), now(), now())
                    ON CONFLICT (slug) DO UPDATE SET symbol = EXCLUDED.symbol, name = EXCLUDED.name,
-                       is_active = true, metadata = EXCLUDED.metadata, updated_at = now()"""
-            ), {"id": coin_id, "symbol": coin.symbol, "name": coin.name, "slug": coin.external_id, "metadata": metadata})
+                       asset_type = EXCLUDED.asset_type, is_active = true, metadata = EXCLUDED.metadata, updated_at = now()"""
+            ), {"id": coin_id, "symbol": coin.symbol, "name": coin.name, "slug": coin.external_id,
+                "asset_type": coin.asset_type, "metadata": metadata})
         await self.session.commit()
         return len(coins)
 
