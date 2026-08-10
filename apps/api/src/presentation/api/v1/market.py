@@ -2,6 +2,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query
 
+from src.config import get_settings
 from src.infrastructure.repositories import SqlRepository
 from src.presentation.cache_response import cached_payload
 from src.presentation.dependencies import DbSession
@@ -68,7 +69,11 @@ async def ranking(
     direction: str | None = Query(default=None, pattern="^(BULLISH|BEARISH|NEUTRAL)$"),
     limit: int = Query(default=50, ge=1, le=100),
 ):
-    key = f"ranking:{model_version or 'latest'}:{direction or 'all'}:{limit}"
+    settings = get_settings()
+    key = (
+        f"ranking:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
+        f"cap:{settings.min_target_market_cap_usd}:{settings.max_target_market_cap_usd}"
+    )
 
     async def load():
         rows = await SqlRepository(session).many(
@@ -111,16 +116,30 @@ async def ranking(
                )
                SELECT ls.*, lp.price, COALESCE(NULLIF(lcv.volume, 0), lmv.volume) AS volume, lmc.market_cap
                FROM latest_scores ls
-               JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id AND lmc.market_cap > 0
+               JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id
+                 AND lmc.market_cap BETWEEN :min_target_market_cap_usd AND :max_target_market_cap_usd
                LEFT JOIN latest_price lp ON lp.coin_id = ls.coin_id
                LEFT JOIN latest_coin_volume lcv ON lcv.coin_id = ls.coin_id
                LEFT JOIN latest_market_volume lmv ON lmv.coin_id = ls.coin_id
                WHERE COALESCE(NULLIF(lcv.volume, 0), lmv.volume, 0) > 0
                ORDER BY value DESC, confidence DESC, calculated_at DESC
                LIMIT :limit""",
-            {"model_version": model_version, "direction": direction, "limit": limit},
+            {
+                "model_version": model_version,
+                "direction": direction,
+                "limit": limit,
+                "min_target_market_cap_usd": settings.min_target_market_cap_usd,
+                "max_target_market_cap_usd": settings.max_target_market_cap_usd,
+            },
         )
-        return {"data": rows, "meta": {"limit": limit}}
+        return {
+            "data": rows,
+            "meta": {
+                "limit": limit,
+                "min_target_market_cap_usd": settings.min_target_market_cap_usd,
+                "max_target_market_cap_usd": settings.max_target_market_cap_usd,
+            },
+        }
 
     return await cached_payload(key, 30, load)
 

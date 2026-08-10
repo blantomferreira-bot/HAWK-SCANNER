@@ -11,6 +11,7 @@ HAWK SCANNER is a modular quantitative crypto-intelligence platform. It ranks as
 - Daily XGBoost learning jobs for 90-day/300% and 30-day/500% breakout targets, storing feature snapshots, training metadata, artifacts and similarity scores.
 - Strict, audited availability checks for CoinGecko, CoinGlass, DefiLlama, Binance, Coinbase, Hyperliquid, Bitquery, Covalent, Alchemy, Moralis, Etherscan, BscScan, Arbiscan, Basescan and Solscan.
 - Automatic initial universe bootstrap from CoinGecko and Binance spot-market discovery.
+- Candidate universe restricted to liquid, non-pegged assets with market cap between US$30M and US$100M.
 - Telegram, Discord and SMTP-email alert channels with per-delivery audit rows.
 - Docker Compose services for PostgreSQL, Redis, Prisma migration, API, worker, scheduler and web.
 

@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     api_rate_limit_per_minute: int = 120
     cors_origins: str = "http://localhost:3000"
     bootstrap_admin_email: str | None = None
+    min_target_market_cap_usd: float = Field(default=30_000_000, ge=0)
+    max_target_market_cap_usd: float = Field(default=100_000_000, gt=0)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

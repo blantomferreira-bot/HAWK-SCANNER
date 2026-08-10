@@ -65,7 +65,13 @@ class ScannerService:
                     if coin.get("asset_type") == "STABLECOIN"
                     or (isinstance(coin.get("metadata"), dict) and coin["metadata"].get("scanner_eligible") is False)
                 }
-                states, current_prices = self._states(coin_snapshots, market_snapshots, excluded_coin_ids)
+                states, current_prices = self._states(
+                    coin_snapshots,
+                    market_snapshots,
+                    excluded_coin_ids,
+                    self.settings.min_target_market_cap_usd,
+                    self.settings.max_target_market_cap_usd,
+                )
                 realized_returns = {
                     coin_id: current_prices[coin_id] / previous_prices[coin_id] - 1
                     for coin_id in current_prices if coin_id in previous_prices and previous_prices[coin_id] > 0
@@ -144,6 +150,7 @@ class ScannerService:
     @staticmethod
     def _states(
         coin_snapshots: list[CoinSnapshot], market_snapshots: list[MarketSnapshot], excluded_coin_ids: set[str] | None = None,
+        min_market_cap: float = 30_000_000, max_market_cap: float = 100_000_000,
     ) -> tuple[dict[str, RawMarketState], dict[str, float]]:
         source: dict[str, dict[str, float | None]] = {}
         prices: dict[str, float] = {}
@@ -163,15 +170,24 @@ class ScannerService:
         states = {
             coin_id: RawMarketState(**values)
             for coin_id, values in source.items()
-            if coin_id not in blocked and ScannerService._is_eligible_for_ranking(values)
+            if coin_id not in blocked and ScannerService._is_eligible_for_ranking(values, min_market_cap, max_market_cap)
         }
         return states, {coin_id: price for coin_id, price in prices.items() if coin_id in states}
 
     @staticmethod
-    def _is_eligible_for_ranking(values: dict[str, float | None]) -> bool:
-        """Require a current, positive market-cap and spot-liquidity observation before scoring."""
-        baseline = (values.get("market_cap"), values.get("spot_volume"))
-        return all(value is not None and math.isfinite(value) and value > 0 for value in baseline)
+    def _is_eligible_for_ranking(
+        values: dict[str, float | None], min_market_cap: float, max_market_cap: float,
+    ) -> bool:
+        """Accept only liquid $30M–$100M candidates by default, before Hawk Score calculation."""
+        market_cap, spot_volume = values.get("market_cap"), values.get("spot_volume")
+        return (
+            market_cap is not None
+            and spot_volume is not None
+            and math.isfinite(market_cap)
+            and math.isfinite(spot_volume)
+            and min_market_cap <= market_cap <= max_market_cap
+            and spot_volume > 0
+        )
 
     async def _deliver(self, repository: ScannerRepository, alert_id: str, message: NotificationMessage) -> bool:
         outcomes = await asyncio.gather(self.notifier.telegram(message), self.notifier.discord(message), self.notifier.email(message))

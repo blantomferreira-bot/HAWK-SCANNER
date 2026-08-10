@@ -20,4 +20,6 @@ def test_scanner_settings_allows_public_data_default(monkeypatch):
 
     settings = ScannerSettings.from_environment()
     assert settings.require_all_data_sources is False
-    assert settings.coingecko_catalog_pages == 1
+    assert settings.coingecko_catalog_pages == 3
+    assert settings.min_target_market_cap_usd == 30_000_000
+    assert settings.max_target_market_cap_usd == 100_000_000

@@ -110,7 +110,7 @@ export function RankingTable() {
 
   return <section className="panel overflow-hidden">
     <div className="flex flex-col gap-4 border-b border-white/[.07] p-5 lg:flex-row lg:items-center lg:justify-between">
-      <div><h2 className="text-base font-semibold">Top Ranking</h2><p className="mt-1 text-xs text-muted-foreground">Liquid, non-pegged assets ranked by the latest calibrated Hawk Score</p></div>
+      <div><h2 className="text-base font-semibold">Top Ranking</h2><p className="mt-1 text-xs text-muted-foreground">Liquid, non-pegged assets between $30M and $100M market cap</p></div>
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-[180px] flex-1 sm:min-w-[220px]"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search asset..." className="pl-9" /></div>
         <div className="relative">
