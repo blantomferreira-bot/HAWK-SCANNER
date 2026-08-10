@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ForceFullNavigation } from "@/components/force-full-navigation";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="pt-BR" className="dark scroll-smooth"><body>{children}</body></html>;
+  return <html lang="pt-BR" className="dark scroll-smooth"><body><ForceFullNavigation />{children}</body></html>;
 }
