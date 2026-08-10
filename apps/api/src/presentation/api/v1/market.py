@@ -82,6 +82,10 @@ async def ranking(
                    AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
                    AND c.asset_type <> 'STABLECOIN'
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
+                   AND COALESCE(c.metadata ->> 'coingecko_id', c.slug) NOT IN (
+                     'tether', 'usd-coin', 'dai', 'usd1', 'first-digital-usd', 'paypal-usd', 'ethena-usde', 'usds',
+                     'global-dollar', 'frax', 'true-usd', 'paxos-standard', 'liquity-usd', 'usdd', 'usde'
+                   )
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (
                  SELECT DISTINCT ON (coin_id) coin_id, value AS price
@@ -103,15 +107,9 @@ async def ranking(
                  SELECT DISTINCT ON (coin_id) coin_id, value AS market_cap
                  FROM metrics WHERE type = 'MARKET_CAP' AND market_id IS NULL
                  ORDER BY coin_id, observed_at DESC
-               ), tradable_spot_coins AS (
-                 SELECT DISTINCT m.base_coin_id AS coin_id
-                 FROM markets m
-                 JOIN exchanges e ON e.id = m.exchange_id
-                 WHERE m.is_active = true AND e.is_active = true AND m.market_type = 'SPOT'
                )
                SELECT ls.*, lp.price, COALESCE(NULLIF(lcv.volume, 0), lmv.volume) AS volume, lmc.market_cap
                FROM latest_scores ls
-               JOIN tradable_spot_coins tsc ON tsc.coin_id = ls.coin_id
                JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id AND lmc.market_cap > 0
                LEFT JOIN latest_price lp ON lp.coin_id = ls.coin_id
                LEFT JOIN latest_coin_volume lcv ON lcv.coin_id = ls.coin_id

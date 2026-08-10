@@ -9,11 +9,7 @@ def test_states_exclude_assets_without_positive_market_cap_or_volume():
             CoinSnapshot("no-volume", "NOV", 5.0, 1_000_000.0, 0.0, "coingecko"),
             CoinSnapshot("no-market-cap", "NMC", 3.0, 0.0, 100_000.0, "coingecko"),
         ],
-        [
-            MarketSnapshot("eligible", "eligible-market", "ELGUSDT", 12.0, 50_000.0, None, None, None, "binance"),
-            MarketSnapshot("no-volume", "no-volume-market", "NOVUSDT", 5.0, 0.0, None, None, None, "binance"),
-            MarketSnapshot("no-market-cap", "no-market-cap-market", "NMCUSDT", 3.0, 100_000.0, None, None, None, "binance"),
-        ],
+        [],
     )
 
     assert set(states) == {"eligible"}
