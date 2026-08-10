@@ -14,7 +14,7 @@ from src.infrastructure.database import SessionLocal  # noqa: E402
 
 from hawk_worker.calibration import DynamicCalibrator
 from hawk_worker.config import ScannerSettings
-from hawk_worker.models import CoinSnapshot, MarketSnapshot, NotificationMessage
+from hawk_worker.models import CatalogCoin, CoinSnapshot, MarketSnapshot, NotificationMessage
 from hawk_worker.mandatory_sources import MandatorySourceRegistry
 from hawk_worker.notifications import NotificationService
 from hawk_worker.providers import BinancePublicProvider, CoinGeckoPublicProvider
@@ -52,11 +52,16 @@ class ScannerService:
                     failures = [item.source for item in consultations if item.status != "AVAILABLE"]
                     if failures:
                         raise RuntimeError(f"Mandatory data sources unavailable: {', '.join(failures)}")
-                await self._refresh_catalog(repository, lock_client)
+                catalog_coins = await self._refresh_catalog(repository, lock_client)
                 coins, markets = await repository.active_coins(), await repository.active_markets()
                 coins_seen = len(coins)
                 previous_prices = await repository.prices_before(started_at)
-                coin_snapshots, market_snapshots = await self._public_snapshots(coins, markets)
+                catalog_snapshots = self._catalog_snapshots(catalog_coins, coins)
+                coin_snapshots, market_snapshots = await self._public_snapshots(coins, markets, catalog_snapshots)
+                await repository.record_source_consultation(
+                    "coingecko", "AVAILABLE" if coin_snapshots else "FAILED",
+                    "catalog market data" if catalog_snapshots else "snapshot market data",
+                )
                 await repository.persist_coin_snapshots(coin_snapshots, started_at)
                 await repository.persist_market_snapshots(market_snapshots, started_at)
                 excluded_coin_ids = {
@@ -110,13 +115,13 @@ class ScannerService:
         finally:
             await lock_client.delete("hawk-scanner:scan-lock")
 
-    async def _refresh_catalog(self, repository: ScannerRepository, lock_client) -> None:
+    async def _refresh_catalog(self, repository: ScannerRepository, lock_client) -> list[CatalogCoin]:
         """Initialize and then refresh the tradable universe daily, not every scan."""
         # Bump when the public-universe classifier changes so already cached
         # catalog data is reclassified on the next scanner run.
-        catalog_key = "hawk-scanner:catalog:v6"
+        catalog_key = "hawk-scanner:catalog:v7"
         if await lock_client.get(catalog_key):
-            return
+            return []
         catalog_coins = []
         binance_markets = []
         try:
@@ -133,14 +138,20 @@ class ScannerService:
             await repository.upsert_binance_markets(binance_markets)
         if catalog_coins or binance_markets:
             await lock_client.set(catalog_key, "ready", ex=self.settings.catalog_refresh_seconds)
+        return catalog_coins
 
     async def _public_snapshots(
-        self, coins: list[dict], markets: list[dict]
+        self, coins: list[dict], markets: list[dict], catalog_snapshots: list[CoinSnapshot] | None = None,
     ) -> tuple[list[CoinSnapshot], list[MarketSnapshot]]:
         """Use every available public feed without making one transient failure fatal."""
-        coin_result, market_result = await asyncio.gather(
-            self.coin_gecko.fetch(coins), self.binance.fetch(markets), return_exceptions=True
-        )
+        if catalog_snapshots:
+            coin_result = catalog_snapshots
+            market_result = await asyncio.gather(self.binance.fetch(markets), return_exceptions=True)
+            market_result = market_result[0]
+        else:
+            coin_result, market_result = await asyncio.gather(
+                self.coin_gecko.fetch(coins), self.binance.fetch(markets), return_exceptions=True
+            )
         coin_snapshots = coin_result if isinstance(coin_result, list) else []
         market_snapshots = market_result if isinstance(market_result, list) else []
         if isinstance(coin_result, Exception):
@@ -148,6 +159,27 @@ class ScannerService:
         if isinstance(market_result, Exception):
             logger.warning("Binance snapshots unavailable for this cycle", exc_info=market_result)
         return coin_snapshots, market_snapshots
+
+    @staticmethod
+    def _catalog_snapshots(catalog_coins: list[CatalogCoin], coins: list[dict]) -> list[CoinSnapshot]:
+        """Reuse fresh catalog prices on refresh cycles instead of re-querying CoinGecko."""
+        coin_ids_by_external_id = {
+            str(metadata.get("coingecko_id")): coin["id"]
+            for coin in coins
+            if isinstance((metadata := coin.get("metadata")), dict) and metadata.get("coingecko_id")
+        }
+        return [
+            CoinSnapshot(
+                coin_id=coin_ids_by_external_id[item.external_id],
+                symbol=item.symbol,
+                price=item.price,
+                market_cap=item.market_cap,
+                spot_volume=item.spot_volume,
+                source="coingecko",
+            )
+            for item in catalog_coins
+            if item.external_id in coin_ids_by_external_id
+        ]
 
     @staticmethod
     def _states(

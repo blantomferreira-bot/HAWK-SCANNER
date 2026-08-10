@@ -18,7 +18,7 @@ class SourceConsultation:
 
 class MandatorySourceRegistry:
     required_sources = (
-        "coingecko", "coinglass", "defillama", "binance", "coinbase", "hyperliquid", "bitquery", "covalent",
+        "coinglass", "defillama", "binance", "coinbase", "hyperliquid", "bitquery", "covalent",
         "alchemy", "moralis", "etherscan", "bscscan", "arbiscan", "basescan", "solscan",
     )
 
@@ -43,8 +43,6 @@ class MandatorySourceRegistry:
 
     @staticmethod
     def _request(source: str, key: str) -> tuple[str, str, dict[str, Any]]:
-        if source == "coingecko":
-            return "GET", "https://api.coingecko.com/api/v3/ping", {"headers": {"x-cg-pro-api-key": key} if key else {}}
         if source == "coinglass":
             if not key: raise ValueError("COINGLASS_API_KEY is required")
             return "GET", "https://open-api-v4.coinglass.com/api/futures/supported-coins", {"headers": {"CG-API-KEY": key}}

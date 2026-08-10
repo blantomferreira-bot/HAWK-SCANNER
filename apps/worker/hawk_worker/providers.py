@@ -84,6 +84,9 @@ class CoinGeckoPublicProvider:
                 asset_type="STABLECOIN" if classifications.get(str(item["id"]), {}).get("stablecoin") else "CRYPTOCURRENCY",
                 scanner_eligible=not classifications.get(str(item["id"]), {}).get("excluded", False),
                 classification_reason=classifications.get(str(item["id"]), {}).get("reason"),
+                price=item.get("current_price"),
+                market_cap=item.get("market_cap"),
+                spot_volume=item.get("total_volume"),
             )
             for item in responses
             if item.get("id") and item.get("symbol") and item.get("name")
@@ -92,13 +95,13 @@ class CoinGeckoPublicProvider:
     async def _catalog_classifications(self, client: httpx.AsyncClient, catalog_pages: int) -> dict[str, dict[str, Any]]:
         """Classify scanner assets from CoinGecko's primary category per exclusion type.
 
-        The unauthenticated CoinGecko endpoint has a shared request budget.  It
+        The unauthenticated CoinGecko endpoint has a shared request budget. It
         exposes many overlapping meme subcategories, and requesting every one
-        can consume the entire budget before the actual price snapshot is
-        collected.  The top-level Meme category contains the market-cap
-        ordered universe relevant to the scanner, so we use one canonical
-        category for each exclusion type and preserve enough requests for
-        market data.
+        can consume the entire budget before market data is collected. The
+        top-level Meme category contains the market-cap ordered universe
+        relevant to the scanner, so it is the dynamic classification source;
+        stablecoin and tokenized-asset safeguards remain in the fallback set
+        until a higher-quota CoinGecko key is configured.
         """
         classifications: dict[str, dict[str, Any]] = {
             coin_id: {"stablecoin": True, "excluded": True, "reason": "stablecoin-fallback"}
@@ -138,11 +141,11 @@ class CoinGeckoPublicProvider:
                         (0 if normalized_name in {"meme", "memes"} else 1, category_id, "memecoin-category", False)
                     )
 
-            # One primary request for each class keeps a three-page catalog and
-            # its three snapshot batches within the public API's rate budget.
-            request_budget = min(3, max(1, catalog_pages))
+            # Keep one dynamic category call available during a catalog refresh
+            # so the subsequent market pages remain within the public quota.
+            request_budget = min(1, max(1, catalog_pages))
             targets: list[tuple[str, str, bool]] = []
-            for category_kind in ("memecoin", "stablecoin", "non-speculative-category"):
+            for category_kind in ("memecoin",):
                 if not candidates[category_kind]:
                     continue
                 _, category_id, reason, is_stablecoin = min(candidates[category_kind])

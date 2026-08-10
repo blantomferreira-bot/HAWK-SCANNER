@@ -33,6 +33,9 @@ class CatalogCoin:
     asset_type: str = "CRYPTOCURRENCY"
     scanner_eligible: bool = True
     classification_reason: str | None = None
+    price: float | None = None
+    market_cap: float | None = None
+    spot_volume: float | None = None
 
 
 @dataclass(frozen=True)

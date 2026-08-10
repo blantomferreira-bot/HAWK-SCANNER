@@ -1,4 +1,4 @@
-from hawk_worker.models import CoinSnapshot, MarketSnapshot
+from hawk_worker.models import CatalogCoin, CoinSnapshot, MarketSnapshot
 from hawk_worker.providers import CoinGeckoPublicProvider
 from hawk_worker.scanner import ScannerService
 
@@ -49,3 +49,12 @@ def test_memecoin_fallback_covers_high_confidence_meme_assets_in_current_market_
     assert {
         "baby-doge-coin", "turbo", "comedian", "peanut-the-squirrel", "jelly-my-jelly", "the-black-bull",
     }.issubset(CoinGeckoPublicProvider.fallback_memecoin_ids)
+
+
+def test_catalog_market_data_is_reused_without_a_second_coingecko_request():
+    snapshots = ScannerService._catalog_snapshots(
+        [CatalogCoin("candidate", "CND", "Candidate", 300, price=1.25, market_cap=50_000_000.0, spot_volume=800_000.0)],
+        [{"id": "coin_1", "metadata": {"coingecko_id": "candidate"}}],
+    )
+
+    assert snapshots == [CoinSnapshot("coin_1", "CND", 1.25, 50_000_000.0, 800_000.0, "coingecko")]
