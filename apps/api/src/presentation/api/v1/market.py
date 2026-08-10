@@ -83,8 +83,9 @@ async def ranking(
                    AND c.asset_type <> 'STABLECOIN'
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
                    AND COALESCE(c.metadata ->> 'coingecko_id', c.slug) NOT IN (
-                     'tether', 'usd-coin', 'dai', 'usd1', 'first-digital-usd', 'paypal-usd', 'ethena-usde', 'usds',
-                     'global-dollar', 'frax', 'true-usd', 'paxos-standard', 'liquity-usd', 'usdd', 'usde'
+                     'tether', 'usd-coin', 'dai', 'usd1', 'usd1-wlfi', 'first-digital-usd', 'paypal-usd', 'ethena-usde',
+                     'usds', 'global-dollar', 'frax', 'true-usd', 'paxos-standard', 'liquity-usd', 'usdd', 'usde',
+                     'pax-gold', 'tether-gold'
                    )
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (

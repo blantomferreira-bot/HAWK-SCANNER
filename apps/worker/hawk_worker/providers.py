@@ -28,9 +28,10 @@ class CoinGeckoPublicProvider:
     endpoint = "https://api.coingecko.com/api/v3/coins/markets"
     categories_endpoint = "https://api.coingecko.com/api/v3/coins/categories/list"
     fallback_stablecoin_ids = frozenset({
-        "tether", "usd-coin", "dai", "usd1", "first-digital-usd", "paypal-usd", "ethena-usde", "usds",
+        "tether", "usd-coin", "dai", "usd1", "usd1-wlfi", "first-digital-usd", "paypal-usd", "ethena-usde", "usds",
         "global-dollar", "frax", "true-usd", "paxos-standard", "liquity-usd", "usdd", "usde",
     })
+    fallback_non_speculative_ids = frozenset({"pax-gold", "tether-gold"})
 
     def __init__(self, api_key: str = "") -> None:
         self.api_key = api_key
@@ -83,6 +84,10 @@ class CoinGeckoPublicProvider:
             coin_id: {"stablecoin": True, "excluded": True, "reason": "stablecoin-fallback"}
             for coin_id in self.fallback_stablecoin_ids
         }
+        classifications.update({
+            coin_id: {"stablecoin": False, "excluded": True, "reason": "rwa-fallback"}
+            for coin_id in self.fallback_non_speculative_ids
+        })
         try:
             categories_response = await client.get(self.categories_endpoint, headers=self.headers)
             categories_response.raise_for_status()
