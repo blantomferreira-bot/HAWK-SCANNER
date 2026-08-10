@@ -1,10 +1,13 @@
 import asyncio
 import json
+import logging
 from typing import Any
 
 import httpx
 
 from hawk_worker.models import CatalogCoin, CatalogMarket, CoinSnapshot, MarketSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 def _metadata(value: Any) -> dict[str, Any]:
@@ -38,12 +41,21 @@ class CoinGeckoPublicProvider:
         async with httpx.AsyncClient(timeout=30) as client:
             responses = []
             for page in range(1, pages + 1):
-                response = await client.get(
-                    self.endpoint,
-                    params={"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": page},
-                    headers=self.headers,
-                )
-                response.raise_for_status()
+                try:
+                    response = await client.get(
+                        self.endpoint,
+                        params={"vs_currency": "usd", "order": "market_cap_desc", "per_page": 250, "page": page},
+                        headers=self.headers,
+                    )
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code != 429:
+                        raise
+                    logger.warning(
+                        "CoinGecko catalog rate limited; using the collected catalog pages",
+                        extra={"requested_pages": pages, "completed_pages": page - 1},
+                    )
+                    break
                 responses.extend(response.json())
         return [
             CatalogCoin(

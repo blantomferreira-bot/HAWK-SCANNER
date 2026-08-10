@@ -15,7 +15,9 @@ def test_scanner_settings_reject_invalid_catalog_pages(monkeypatch):
 
 def test_scanner_settings_allows_public_data_default(monkeypatch):
     monkeypatch.delenv("REQUIRE_ALL_DATA_SOURCES", raising=False)
-    monkeypatch.setenv("COINGECKO_CATALOG_PAGES", "1")
+    monkeypatch.delenv("COINGECKO_CATALOG_PAGES", raising=False)
     monkeypatch.setenv("CATALOG_REFRESH_SECONDS", "3600")
 
-    assert ScannerSettings.from_environment().require_all_data_sources is False
+    settings = ScannerSettings.from_environment()
+    assert settings.require_all_data_sources is False
+    assert settings.coingecko_catalog_pages == 1

@@ -28,7 +28,9 @@ class ScannerSettings:
         threshold = float(os.getenv("HAWK_ALERT_THRESHOLD", "85"))
         if not 0 <= threshold <= 100:
             raise ValueError("HAWK_ALERT_THRESHOLD must be between 0 and 100")
-        catalog_pages = int(os.getenv("COINGECKO_CATALOG_PAGES", "10"))
+        # One 250-asset page is a reliable base universe on CoinGecko's public
+        # quota.  Deployments may increase this when an authenticated key is set.
+        catalog_pages = int(os.getenv("COINGECKO_CATALOG_PAGES", "1"))
         catalog_refresh_seconds = int(os.getenv("CATALOG_REFRESH_SECONDS", "86400"))
         if catalog_pages < 1 or catalog_pages > 40:
             raise ValueError("COINGECKO_CATALOG_PAGES must be between 1 and 40")

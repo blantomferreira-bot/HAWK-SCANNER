@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -17,6 +18,8 @@ from hawk_worker.mandatory_sources import MandatorySourceRegistry
 from hawk_worker.notifications import NotificationService
 from hawk_worker.providers import BinancePublicProvider, CoinGeckoPublicProvider
 from hawk_worker.repository import ScannerRepository
+
+logger = logging.getLogger(__name__)
 
 
 class ScannerService:
@@ -52,7 +55,7 @@ class ScannerService:
                 coins, markets = await repository.active_coins(), await repository.active_markets()
                 coins_seen = len(coins)
                 previous_prices = await repository.prices_before(started_at)
-                coin_snapshots, market_snapshots = await asyncio.gather(self.coin_gecko.fetch(coins), self.binance.fetch(markets))
+                coin_snapshots, market_snapshots = await self._public_snapshots(coins, markets)
                 await repository.persist_coin_snapshots(coin_snapshots, started_at)
                 await repository.persist_market_snapshots(market_snapshots, started_at)
                 states, current_prices = self._states(coin_snapshots, market_snapshots)
@@ -99,11 +102,37 @@ class ScannerService:
         catalog_key = "hawk-scanner:catalog:v1"
         if await lock_client.get(catalog_key):
             return
-        catalog_coins = await self.coin_gecko.catalog(self.settings.coingecko_catalog_pages)
-        await repository.upsert_catalog_coins(catalog_coins)
-        binance_markets = await self.binance.catalog()
-        await repository.upsert_binance_markets(binance_markets)
-        await lock_client.set(catalog_key, "ready", ex=self.settings.catalog_refresh_seconds)
+        catalog_coins = []
+        binance_markets = []
+        try:
+            catalog_coins = await self.coin_gecko.catalog(self.settings.coingecko_catalog_pages)
+        except Exception as error:  # Public providers must not halt the scanner's next attempt.
+            logger.warning("CoinGecko catalog unavailable", exc_info=error)
+        if catalog_coins:
+            await repository.upsert_catalog_coins(catalog_coins)
+        try:
+            binance_markets = await self.binance.catalog()
+        except Exception as error:  # Binance is an independent public fallback.
+            logger.warning("Binance catalog unavailable", exc_info=error)
+        if binance_markets:
+            await repository.upsert_binance_markets(binance_markets)
+        if catalog_coins or binance_markets:
+            await lock_client.set(catalog_key, "ready", ex=self.settings.catalog_refresh_seconds)
+
+    async def _public_snapshots(
+        self, coins: list[dict], markets: list[dict]
+    ) -> tuple[list[CoinSnapshot], list[MarketSnapshot]]:
+        """Use every available public feed without making one transient failure fatal."""
+        coin_result, market_result = await asyncio.gather(
+            self.coin_gecko.fetch(coins), self.binance.fetch(markets), return_exceptions=True
+        )
+        coin_snapshots = coin_result if isinstance(coin_result, list) else []
+        market_snapshots = market_result if isinstance(market_result, list) else []
+        if isinstance(coin_result, Exception):
+            logger.warning("CoinGecko snapshots unavailable for this cycle", exc_info=coin_result)
+        if isinstance(market_result, Exception):
+            logger.warning("Binance snapshots unavailable for this cycle", exc_info=market_result)
+        return coin_snapshots, market_snapshots
 
     @staticmethod
     def _states(coin_snapshots: list[CoinSnapshot], market_snapshots: list[MarketSnapshot]) -> tuple[dict[str, RawMarketState], dict[str, float]]:
