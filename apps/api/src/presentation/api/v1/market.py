@@ -71,7 +71,7 @@ async def ranking(
 ):
     settings = get_settings()
     key = (
-        f"ranking:v4:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
+        f"ranking:v5:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
         f"cap:{settings.min_target_market_cap_usd}:{settings.max_target_market_cap_usd}"
     )
 
@@ -89,10 +89,17 @@ async def ranking(
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
                    AND lower(c.name) NOT LIKE '%meme%'
                    AND lower(c.name) NOT LIKE '%tokenized%'
+                   AND lower(c.name) NOT LIKE '%usd%'
+                   AND lower(c.name) NOT LIKE '%dollar%'
+                   AND lower(c.name) NOT LIKE '%euro%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%meme%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%usd%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%dollar%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%euro%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%eur%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%chf%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%brl%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%jpy%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%tokenized%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%xstock%'
                    AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%gold%'
