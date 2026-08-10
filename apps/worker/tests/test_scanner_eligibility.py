@@ -58,3 +58,12 @@ def test_catalog_market_data_is_reused_without_a_second_coingecko_request():
     )
 
     assert snapshots == [CoinSnapshot("coin_1", "CND", 1.25, 50_000_000.0, 800_000.0, "coingecko")]
+
+
+def test_identity_fallback_rejects_unclassified_meme_and_pegged_assets():
+    assert CoinGeckoPublicProvider._classification_for(
+        {"id": "public-meme-token", "symbol": "PMT", "name": "Public Masterpiece Token"}, {}
+    )["excluded"]
+    assert CoinGeckoPublicProvider._classification_for(
+        {"id": "universal-usd", "symbol": "USDU", "name": "Universal USD"}, {}
+    )["stablecoin"]

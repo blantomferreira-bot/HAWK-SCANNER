@@ -119,7 +119,7 @@ class ScannerService:
         """Initialize and then refresh the tradable universe daily, not every scan."""
         # Bump when the public-universe classifier changes so already cached
         # catalog data is reclassified on the next scanner run.
-        catalog_key = "hawk-scanner:catalog:v7"
+        catalog_key = "hawk-scanner:catalog:v8"
         if await lock_client.get(catalog_key):
             return []
         catalog_coins = []

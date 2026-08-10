@@ -71,7 +71,7 @@ async def ranking(
 ):
     settings = get_settings()
     key = (
-        f"ranking:v3:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
+        f"ranking:v4:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
         f"cap:{settings.min_target_market_cap_usd}:{settings.max_target_market_cap_usd}"
     )
 
@@ -89,6 +89,14 @@ async def ranking(
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
                    AND lower(c.name) NOT LIKE '%meme%'
                    AND lower(c.name) NOT LIKE '%tokenized%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%meme%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%usd%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%dollar%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%euro%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%tokenized%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%xstock%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%gold%'
+                   AND lower(COALESCE(c.metadata ->> 'coingecko_id', c.slug)) NOT LIKE '%wrapped%'
                    AND COALESCE(c.metadata ->> 'coingecko_id', c.slug) NOT IN (
                      'tether', 'usd-coin', 'dai', 'usd1', 'usd1-wlfi', 'first-digital-usd', 'paypal-usd', 'ethena-usde',
                      'usds', 'global-dollar', 'frax', 'true-usd', 'paxos-standard', 'liquity-usd', 'usdd', 'usde',
@@ -100,7 +108,7 @@ async def ranking(
                      'official-trump', 'spx6900', 'brett', 'popcat', 'mog-coin', 'cat-in-a-dogs-world',
                      'goatseus-maximus', 'fartcoin', 'banana-for-scale-2', 'melania-meme', 'baby-doge-coin',
                      'turbo', 'comedian', 'peanut-the-squirrel', 'jelly-my-jelly', 'the-black-bull', 'book-of-meme',
-                     'dog-go-to-the-moon-rune', 'dogelon-mars', 'cash-cat', 'baby-claw'
+                     'dog-go-to-the-moon-rune', 'dogelon-mars', 'cash-cat', 'baby-claw', 'public-meme-token', 'capybobo'
                    )
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (

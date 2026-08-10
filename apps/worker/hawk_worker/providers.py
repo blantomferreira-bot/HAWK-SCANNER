@@ -26,11 +26,16 @@ class CoinGeckoPublicProvider:
     """Coin catalog and bulk public market data, fetched in API-safe batches."""
 
     endpoint = "https://api.coingecko.com/api/v3/coins/markets"
-    categories_endpoint = "https://api.coingecko.com/api/v3/coins/categories/list"
+    meme_category_id = "meme-token"
     fallback_stablecoin_ids = frozenset({
         "tether", "usd-coin", "dai", "usd1", "usd1-wlfi", "first-digital-usd", "paypal-usd", "ethena-usde", "usds",
         "global-dollar", "frax", "true-usd", "paxos-standard", "liquity-usd", "usdd", "usde",
         "royal-euro", "saturn-dollar", "jupusd", "chip-2", "straitsx-xusd", "unity-usd", "wrappedm-by-m0",
+        "hive_dollar", "universal-usd", "usda-2", "binance-usd", "alloy-tether", "infinifi-usd",
+        "cygnus-finance-global-usd", "usdkg", "ebtc-2", "allunity-chf", "usdx", "precious-metals-usd",
+        "usdu", "helio-protocol-hay", "liquity-bold-2", "felix-feusd", "jpycoin", "standx-dusd",
+        "pathusd", "mezo-usd", "xdai", "gemini-dollar", "staked-frax-usd", "aegis-yusd", "dola-usd",
+        "noon-usn", "brz", "crown-brlv", "monerium-eur-money-2", "usda-3",
     })
     fallback_non_speculative_ids = frozenset({
         "pax-gold", "tether-gold", "spacex-bstocks-tokenized-stock", "micron-technology-bstock",
@@ -42,6 +47,7 @@ class CoinGeckoPublicProvider:
         "brett", "popcat", "mog-coin", "cat-in-a-dogs-world", "goatseus-maximus", "fartcoin", "banana-for-scale-2",
         "melania-meme", "baby-doge-coin", "turbo", "comedian", "peanut-the-squirrel", "jelly-my-jelly",
         "the-black-bull", "book-of-meme", "dog-go-to-the-moon-rune", "dogelon-mars", "cash-cat", "baby-claw",
+        "public-meme-token", "capybobo",
     })
 
     def __init__(self, api_key: str = "") -> None:
@@ -81,9 +87,9 @@ class CoinGeckoPublicProvider:
                 symbol=str(item["symbol"]).upper(),
                 name=str(item["name"]),
                 market_cap_rank=item.get("market_cap_rank"),
-                asset_type="STABLECOIN" if classifications.get(str(item["id"]), {}).get("stablecoin") else "CRYPTOCURRENCY",
-                scanner_eligible=not classifications.get(str(item["id"]), {}).get("excluded", False),
-                classification_reason=classifications.get(str(item["id"]), {}).get("reason"),
+                asset_type="STABLECOIN" if (classification := self._classification_for(item, classifications)).get("stablecoin") else "CRYPTOCURRENCY",
+                scanner_eligible=not classification.get("excluded", False),
+                classification_reason=classification.get("reason"),
                 price=item.get("current_price"),
                 market_cap=item.get("market_cap"),
                 spot_volume=item.get("total_volume"),
@@ -92,17 +98,8 @@ class CoinGeckoPublicProvider:
             if item.get("id") and item.get("symbol") and item.get("name")
         ]
 
-    async def _catalog_classifications(self, client: httpx.AsyncClient, catalog_pages: int) -> dict[str, dict[str, Any]]:
-        """Classify scanner assets from CoinGecko's primary category per exclusion type.
-
-        The unauthenticated CoinGecko endpoint has a shared request budget. It
-        exposes many overlapping meme subcategories, and requesting every one
-        can consume the entire budget before market data is collected. The
-        top-level Meme category contains the market-cap ordered universe
-        relevant to the scanner, so it is the dynamic classification source;
-        stablecoin and tokenized-asset safeguards remain in the fallback set
-        until a higher-quota CoinGecko key is configured.
-        """
+    async def _catalog_classifications(self, client: httpx.AsyncClient, _: int) -> dict[str, dict[str, Any]]:
+        """Classify the scanner universe with CoinGecko's canonical meme category."""
         classifications: dict[str, dict[str, Any]] = {
             coin_id: {"stablecoin": True, "excluded": True, "reason": "stablecoin-fallback"}
             for coin_id in self.fallback_stablecoin_ids
@@ -116,69 +113,39 @@ class CoinGeckoPublicProvider:
             for coin_id in self.fallback_memecoin_ids
         })
         try:
-            categories_response = await client.get(self.categories_endpoint, headers=self.headers)
-            categories_response.raise_for_status()
-            categories = categories_response.json()
-            candidates: dict[str, list[tuple[int, str, str, bool]]] = {
-                "memecoin": [], "stablecoin": [], "non-speculative-category": [],
-            }
-            for category in categories:
-                category_id = str(category.get("category_id", ""))
-                name = str(category.get("name", "")).lower()
-                if not category_id:
-                    continue
-                normalized_name = " ".join(name.split())
-                if "stablecoin" in normalized_name:
-                    candidates["stablecoin"].append(
-                        (0 if normalized_name in {"stablecoin", "stablecoins"} else 1, category_id, "stablecoin", True)
-                    )
-                elif "real world asset" in name or "rwa" in name or "tokenized" in name:
-                    candidates["non-speculative-category"].append(
-                        (0 if "real world asset" in normalized_name else 1, category_id, "non-speculative-category", False)
-                    )
-                elif "meme" in normalized_name:
-                    candidates["memecoin"].append(
-                        (0 if normalized_name in {"meme", "memes"} else 1, category_id, "memecoin-category", False)
-                    )
-
-            # Keep one dynamic category call available during a catalog refresh
-            # so the subsequent market pages remain within the public quota.
-            request_budget = min(1, max(1, catalog_pages))
-            targets: list[tuple[str, str, bool]] = []
-            for category_kind in ("memecoin",):
-                if not candidates[category_kind]:
-                    continue
-                _, category_id, reason, is_stablecoin = min(candidates[category_kind])
-                targets.append((category_id, reason, is_stablecoin))
-
-            for category_id, reason, is_stablecoin in targets[:request_budget]:
-                try:
-                    response = await client.get(
-                        self.endpoint,
-                        params={"vs_currency": "usd", "category": category_id, "per_page": 250, "page": 1},
-                        headers=self.headers,
-                    )
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as error:
-                    if error.response.status_code == 429:
-                        logger.warning("CoinGecko classification rate limited; retaining completed classifications")
-                        break
-                    logger.warning("CoinGecko classification category unavailable", exc_info=error)
-                    continue
-                category_coins = response.json()
-                if not isinstance(category_coins, list):
-                    continue
+            response = await client.get(
+                self.endpoint,
+                params={"vs_currency": "usd", "category": self.meme_category_id, "per_page": 250, "page": 1},
+                headers=self.headers,
+            )
+            response.raise_for_status()
+            category_coins = response.json()
+            if isinstance(category_coins, list):
                 for item in category_coins:
                     coin_id = item.get("id")
                     if coin_id:
                         classifications[str(coin_id)] = {
-                            "stablecoin": is_stablecoin,
+                            "stablecoin": False,
                             "excluded": True,
-                            "reason": reason,
+                            "reason": "memecoin-category",
                         }
         except httpx.HTTPError as error:
             logger.warning("CoinGecko universe classification unavailable; applying stablecoin safety fallback", exc_info=error)
         return classifications
+
+    @classmethod
+    def _classification_for(cls, item: dict[str, Any], classifications: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        coin_id = str(item.get("id", ""))
+        if coin_id in classifications:
+            return classifications[coin_id]
+        identity = " ".join((coin_id, str(item.get("symbol", "")), str(item.get("name", "")))).lower()
+        if any(marker in identity for marker in ("meme", "doge", "shib", "pepe", "bonk", "bobo")):
+            return {"stablecoin": False, "excluded": True, "reason": "memecoin-identity-fallback"}
+        if any(marker in identity for marker in ("usd", "dollar", "euro", "eur", "chf", "brl", "jpy", "tether")):
+            return {"stablecoin": True, "excluded": True, "reason": "pegged-asset-identity-fallback"}
+        if any(marker in identity for marker in ("tokenized", "xstock", "security token", "treasury", "gold", "silver", "wrapped btc")):
+            return {"stablecoin": False, "excluded": True, "reason": "non-speculative-identity-fallback"}
+        return {"stablecoin": False, "excluded": False, "reason": None}
 
     async def fetch(self, coins: list[dict[str, Any]]) -> list[CoinSnapshot]:
         mapped = {
