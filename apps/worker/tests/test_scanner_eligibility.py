@@ -1,4 +1,5 @@
 from hawk_worker.models import CoinSnapshot, MarketSnapshot
+from hawk_worker.providers import CoinGeckoPublicProvider
 from hawk_worker.scanner import ScannerService
 
 
@@ -41,3 +42,10 @@ def test_states_exclude_pegged_memecoin_or_other_ineligible_universe_assets():
     )
 
     assert states == {}
+
+
+def test_memecoin_fallback_covers_high_confidence_meme_assets_in_current_market_range():
+    """The scanner must not wait for a category refresh to hide known memecoins."""
+    assert {
+        "baby-doge-coin", "turbo", "comedian", "peanut-the-squirrel", "jelly-my-jelly", "the-black-bull",
+    }.issubset(CoinGeckoPublicProvider.fallback_memecoin_ids)

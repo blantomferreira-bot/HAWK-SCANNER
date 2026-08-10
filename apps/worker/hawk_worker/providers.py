@@ -30,15 +30,18 @@ class CoinGeckoPublicProvider:
     fallback_stablecoin_ids = frozenset({
         "tether", "usd-coin", "dai", "usd1", "usd1-wlfi", "first-digital-usd", "paypal-usd", "ethena-usde", "usds",
         "global-dollar", "frax", "true-usd", "paxos-standard", "liquity-usd", "usdd", "usde",
+        "royal-euro", "saturn-dollar", "jupusd", "chip-2", "straitsx-xusd", "unity-usd", "wrappedm-by-m0",
     })
     fallback_non_speculative_ids = frozenset({
         "pax-gold", "tether-gold", "spacex-bstocks-tokenized-stock", "micron-technology-bstock",
         "blackrock-usd-institutional-digital-liquidity-fund", "circle-internet-group-bstock",
+        "circle-internet-group-ondo-tokenized-stock", "circle-xstock", "tesla-xstock", "sp500-xstock",
     })
     fallback_memecoin_ids = frozenset({
         "dogecoin", "shiba-inu", "pepe", "bonk", "dogwifcoin", "floki", "official-trump", "spx6900",
         "brett", "popcat", "mog-coin", "cat-in-a-dogs-world", "goatseus-maximus", "fartcoin", "banana-for-scale-2",
-        "melania-meme",
+        "melania-meme", "baby-doge-coin", "turbo", "comedian", "peanut-the-squirrel", "jelly-my-jelly",
+        "the-black-bull", "book-of-meme", "dog-go-to-the-moon-rune", "dogelon-mars", "cash-cat", "baby-claw",
     })
 
     def __init__(self, api_key: str = "") -> None:
@@ -53,7 +56,7 @@ class CoinGeckoPublicProvider:
         if pages < 1:
             raise ValueError("COINGECKO_CATALOG_PAGES must be at least 1")
         async with httpx.AsyncClient(timeout=30) as client:
-            classifications = await self._catalog_classifications(client)
+            classifications = await self._catalog_classifications(client, pages)
             responses = []
             for page in range(1, pages + 1):
                 try:
@@ -86,8 +89,17 @@ class CoinGeckoPublicProvider:
             if item.get("id") and item.get("symbol") and item.get("name")
         ]
 
-    async def _catalog_classifications(self, client: httpx.AsyncClient) -> dict[str, dict[str, Any]]:
-        """Classify the scanner universe from CoinGecko categories, with a stablecoin safety fallback."""
+    async def _catalog_classifications(self, client: httpx.AsyncClient, catalog_pages: int) -> dict[str, dict[str, Any]]:
+        """Classify scanner assets from CoinGecko's primary category per exclusion type.
+
+        The unauthenticated CoinGecko endpoint has a shared request budget.  It
+        exposes many overlapping meme subcategories, and requesting every one
+        can consume the entire budget before the actual price snapshot is
+        collected.  The top-level Meme category contains the market-cap
+        ordered universe relevant to the scanner, so we use one canonical
+        category for each exclusion type and preserve enough requests for
+        market data.
+        """
         classifications: dict[str, dict[str, Any]] = {
             coin_id: {"stablecoin": True, "excluded": True, "reason": "stablecoin-fallback"}
             for coin_id in self.fallback_stablecoin_ids
@@ -104,41 +116,63 @@ class CoinGeckoPublicProvider:
             categories_response = await client.get(self.categories_endpoint, headers=self.headers)
             categories_response.raise_for_status()
             categories = categories_response.json()
-            targets: list[tuple[str, str, bool]] = []
+            candidates: dict[str, list[tuple[int, str, str, bool]]] = {
+                "memecoin": [], "stablecoin": [], "non-speculative-category": [],
+            }
             for category in categories:
                 category_id = str(category.get("category_id", ""))
                 name = str(category.get("name", "")).lower()
                 if not category_id:
                     continue
-                if "stablecoin" in name:
-                    targets.append((category_id, "stablecoin", True))
+                normalized_name = " ".join(name.split())
+                if "stablecoin" in normalized_name:
+                    candidates["stablecoin"].append(
+                        (0 if normalized_name in {"stablecoin", "stablecoins"} else 1, category_id, "stablecoin", True)
+                    )
                 elif "real world asset" in name or "rwa" in name or "tokenized" in name:
-                    targets.append((category_id, "non-speculative-category", False))
-                elif "meme" in name:
-                    targets.append((category_id, "memecoin-category", False))
-            for category_id, reason, is_stablecoin in targets:
-                page = 1
-                while True:
+                    candidates["non-speculative-category"].append(
+                        (0 if "real world asset" in normalized_name else 1, category_id, "non-speculative-category", False)
+                    )
+                elif "meme" in normalized_name:
+                    candidates["memecoin"].append(
+                        (0 if normalized_name in {"meme", "memes"} else 1, category_id, "memecoin-category", False)
+                    )
+
+            # One primary request for each class keeps a three-page catalog and
+            # its three snapshot batches within the public API's rate budget.
+            request_budget = min(3, max(1, catalog_pages))
+            targets: list[tuple[str, str, bool]] = []
+            for category_kind in ("memecoin", "stablecoin", "non-speculative-category"):
+                if not candidates[category_kind]:
+                    continue
+                _, category_id, reason, is_stablecoin = min(candidates[category_kind])
+                targets.append((category_id, reason, is_stablecoin))
+
+            for category_id, reason, is_stablecoin in targets[:request_budget]:
+                try:
                     response = await client.get(
                         self.endpoint,
-                        params={"vs_currency": "usd", "category": category_id, "per_page": 250, "page": page},
+                        params={"vs_currency": "usd", "category": category_id, "per_page": 250, "page": 1},
                         headers=self.headers,
                     )
                     response.raise_for_status()
-                    category_coins = response.json()
-                    if not isinstance(category_coins, list):
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code == 429:
+                        logger.warning("CoinGecko classification rate limited; retaining completed classifications")
                         break
-                    for item in category_coins:
-                        coin_id = item.get("id")
-                        if coin_id:
-                            classifications[str(coin_id)] = {
-                                "stablecoin": is_stablecoin,
-                                "excluded": True,
-                                "reason": reason,
-                            }
-                    if len(category_coins) < 250:
-                        break
-                    page += 1
+                    logger.warning("CoinGecko classification category unavailable", exc_info=error)
+                    continue
+                category_coins = response.json()
+                if not isinstance(category_coins, list):
+                    continue
+                for item in category_coins:
+                    coin_id = item.get("id")
+                    if coin_id:
+                        classifications[str(coin_id)] = {
+                            "stablecoin": is_stablecoin,
+                            "excluded": True,
+                            "reason": reason,
+                        }
         except httpx.HTTPError as error:
             logger.warning("CoinGecko universe classification unavailable; applying stablecoin safety fallback", exc_info=error)
         return classifications
@@ -155,12 +189,18 @@ class CoinGeckoPublicProvider:
         external_ids = list(mapped)
         async with httpx.AsyncClient(timeout=30) as client:
             for offset in range(0, len(external_ids), 250):
-                response = await client.get(
-                    self.endpoint,
-                    params={"vs_currency": "usd", "ids": ",".join(external_ids[offset:offset + 250]), "per_page": 250},
-                    headers=self.headers,
-                )
-                response.raise_for_status()
+                try:
+                    response = await client.get(
+                        self.endpoint,
+                        params={"vs_currency": "usd", "ids": ",".join(external_ids[offset:offset + 250]), "per_page": 250},
+                        headers=self.headers,
+                    )
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code == 429:
+                        logger.warning("CoinGecko snapshots rate limited; retaining completed snapshot batches")
+                        break
+                    raise
                 payload.extend(response.json())
         snapshots: list[CoinSnapshot] = []
         for item in payload:

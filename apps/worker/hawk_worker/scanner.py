@@ -112,7 +112,9 @@ class ScannerService:
 
     async def _refresh_catalog(self, repository: ScannerRepository, lock_client) -> None:
         """Initialize and then refresh the tradable universe daily, not every scan."""
-        catalog_key = "hawk-scanner:catalog:v5"
+        # Bump when the public-universe classifier changes so already cached
+        # catalog data is reclassified on the next scanner run.
+        catalog_key = "hawk-scanner:catalog:v6"
         if await lock_client.get(catalog_key):
             return
         catalog_coins = []
