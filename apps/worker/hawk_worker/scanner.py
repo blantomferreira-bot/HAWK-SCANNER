@@ -14,10 +14,10 @@ from src.infrastructure.database import SessionLocal  # noqa: E402
 
 from hawk_worker.calibration import DynamicCalibrator
 from hawk_worker.config import ScannerSettings
-from hawk_worker.models import CatalogCoin, CoinSnapshot, MarketSnapshot, NotificationMessage
+from hawk_worker.models import CatalogCoin, CatalogMarket, CoinSnapshot, MarketSnapshot, NotificationMessage
 from hawk_worker.mandatory_sources import MandatorySourceRegistry
 from hawk_worker.notifications import NotificationService
-from hawk_worker.providers import BinancePublicProvider, CoinGeckoPublicProvider
+from hawk_worker.providers import BinancePublicProvider, CoinbasePublicProvider, CoinGeckoPublicProvider
 from hawk_worker.repository import ScannerRepository
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ class ScannerService:
         self.notifier = NotificationService(settings)
         self.coin_gecko = CoinGeckoPublicProvider(settings.source_api_keys["coingecko"])
         self.binance = BinancePublicProvider()
+        self.coinbase = CoinbasePublicProvider()
         self.mandatory_sources = MandatorySourceRegistry(settings)
 
     async def run_once(self) -> dict[str, int | str]:
@@ -55,6 +56,8 @@ class ScannerService:
                 catalog_coins = await self._refresh_catalog(repository, lock_client)
                 coins, markets = await repository.active_coins(), await repository.active_markets()
                 coins_seen = len(coins)
+                exchange_listed_coin_ids = await self._exchange_listed_coin_ids(coins)
+                await repository.set_exchange_listing_eligibility(exchange_listed_coin_ids)
                 previous_prices = await repository.prices_before(started_at)
                 catalog_snapshots = self._catalog_snapshots(catalog_coins, coins)
                 coin_snapshots, market_snapshots = await self._public_snapshots(coins, markets, catalog_snapshots)
@@ -69,6 +72,7 @@ class ScannerService:
                     for coin in coins
                     if coin.get("asset_type") == "STABLECOIN"
                     or (isinstance(coin.get("metadata"), dict) and coin["metadata"].get("scanner_eligible") is False)
+                    or coin["id"] not in exchange_listed_coin_ids
                 }
                 states, current_prices = self._states(
                     coin_snapshots,
@@ -159,6 +163,24 @@ class ScannerService:
         if isinstance(market_result, Exception):
             logger.warning("Binance snapshots unavailable for this cycle", exc_info=market_result)
         return coin_snapshots, market_snapshots
+
+    async def _exchange_listed_coin_ids(self, coins: list[dict]) -> set[str]:
+        """Accept only assets with an active USD, USDC or USDT spot market on Binance or Coinbase."""
+        binance_result, coinbase_result = await asyncio.gather(
+            self.binance.catalog(), self.coinbase.catalog(), return_exceptions=True
+        )
+        listings: list[CatalogMarket] = []
+        for exchange, result in (("Binance", binance_result), ("Coinbase", coinbase_result)):
+            if isinstance(result, Exception):
+                logger.warning("%s listing catalog unavailable", exchange, exc_info=result)
+                continue
+            listings.extend(result)
+        return self._listed_coin_ids(coins, listings)
+
+    @staticmethod
+    def _listed_coin_ids(coins: list[dict], listings: list[CatalogMarket]) -> set[str]:
+        listed_symbols = {listing.base_symbol.upper() for listing in listings}
+        return {coin["id"] for coin in coins if str(coin.get("symbol", "")).upper() in listed_symbols}
 
     @staticmethod
     def _catalog_snapshots(catalog_coins: list[CatalogCoin], coins: list[dict]) -> list[CoinSnapshot]:

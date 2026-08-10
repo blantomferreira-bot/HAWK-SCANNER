@@ -1,4 +1,4 @@
-from hawk_worker.models import CatalogCoin, CoinSnapshot, MarketSnapshot
+from hawk_worker.models import CatalogCoin, CatalogMarket, CoinSnapshot, MarketSnapshot
 from hawk_worker.providers import CoinGeckoPublicProvider
 from hawk_worker.scanner import ScannerService
 
@@ -67,3 +67,15 @@ def test_identity_fallback_rejects_unclassified_meme_and_pegged_assets():
     assert CoinGeckoPublicProvider._classification_for(
         {"id": "universal-usd", "symbol": "USDU", "name": "Universal USD"}, {}
     )["stablecoin"]
+
+
+def test_listing_gate_accepts_only_assets_with_binance_or_coinbase_spot_symbols():
+    listed = ScannerService._listed_coin_ids(
+        [{"id": "listed", "symbol": "LST"}, {"id": "unlisted", "symbol": "DEX"}],
+        [
+            CatalogMarket("LSTUSDT", "LST", "USDT", "BINANCE"),
+            CatalogMarket("OTHER-USD", "OTHER", "USD", "COINBASE"),
+        ],
+    )
+
+    assert listed == {"listed"}

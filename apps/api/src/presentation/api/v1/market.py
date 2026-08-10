@@ -71,7 +71,7 @@ async def ranking(
 ):
     settings = get_settings()
     key = (
-        f"ranking:v5:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
+        f"ranking:v6:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
         f"cap:{settings.min_target_market_cap_usd}:{settings.max_target_market_cap_usd}"
     )
 
@@ -87,6 +87,7 @@ async def ranking(
                    AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
                    AND c.asset_type <> 'STABLECOIN'
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
+                   AND COALESCE(c.metadata ->> 'exchange_listing_eligible', 'false') = 'true'
                    AND lower(c.name) NOT LIKE '%meme%'
                    AND lower(c.name) NOT LIKE '%tokenized%'
                    AND lower(c.name) NOT LIKE '%usd%'

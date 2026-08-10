@@ -110,6 +110,17 @@ class ScannerRepository:
         ))
         return [dict(row) for row in result.mappings().all()]
 
+    async def set_exchange_listing_eligibility(self, eligible_coin_ids: set[str]) -> None:
+        """Persist the mandatory Binance-or-Coinbase listing gate for API reads."""
+        await self.session.execute(text(
+            """UPDATE coins
+               SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                 'exchange_listing_eligible', id = ANY(CAST(:eligible_ids AS text[]))
+               ), updated_at = now()
+               WHERE is_active = true"""
+        ), {"eligible_ids": sorted(eligible_coin_ids)})
+        await self.session.commit()
+
     async def prices_before(self, observed_at: datetime) -> Mapping[str, float]:
         result = await self.session.execute(text(
             """SELECT DISTINCT ON (coin_id) coin_id, close FROM history

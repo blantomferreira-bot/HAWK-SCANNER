@@ -43,6 +43,7 @@ class CatalogMarket:
     symbol: str
     base_symbol: str
     quote_symbol: str
+    exchange_code: str = "BINANCE"
 
 
 @dataclass(frozen=True)

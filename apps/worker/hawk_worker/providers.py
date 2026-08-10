@@ -187,9 +187,12 @@ class CoinGeckoPublicProvider:
 class BinancePublicProvider:
     """Bulk spot ticker and best-book data for configured Binance markets."""
 
-    ticker_endpoint = "https://api.binance.com/api/v3/ticker/24hr"
-    book_endpoint = "https://api.binance.com/api/v3/ticker/bookTicker"
-    exchange_info_endpoint = "https://api.binance.com/api/v3/exchangeInfo"
+    # Binance documents this public-data mirror for clients that do not need
+    # private trading endpoints. It also avoids the regional block returned by
+    # api.binance.com from the production worker's network.
+    ticker_endpoint = "https://data-api.binance.vision/api/v3/ticker/24hr"
+    book_endpoint = "https://data-api.binance.vision/api/v3/ticker/bookTicker"
+    exchange_info_endpoint = "https://data-api.binance.vision/api/v3/exchangeInfo"
 
     async def catalog(self) -> list[CatalogMarket]:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -200,8 +203,8 @@ class BinancePublicProvider:
             for item in response.json().get("symbols", [])
             if item.get("status") == "TRADING"
             and item.get("isSpotTradingAllowed", False)
-            and item.get("quoteAsset") == "USDT"
-            and item.get("baseAsset") != "USDT"
+            and item.get("quoteAsset") in {"USDT", "USDC"}
+            and item.get("baseAsset") not in {"USDT", "USDC"}
         ]
 
     async def fetch(self, markets: list[dict[str, Any]]) -> list[MarketSnapshot]:
@@ -230,3 +233,30 @@ class BinancePublicProvider:
                 source="binance",
             ))
         return result
+
+
+class CoinbasePublicProvider:
+    """Public Coinbase Exchange spot-product catalog used for eligibility."""
+
+    products_endpoint = "https://api.exchange.coinbase.com/products"
+
+    async def catalog(self) -> list[CatalogMarket]:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(self.products_endpoint)
+            response.raise_for_status()
+        return [
+            CatalogMarket(
+                symbol=str(item["id"]),
+                base_symbol=str(item["base_currency"]),
+                quote_symbol=str(item["quote_currency"]),
+                exchange_code="COINBASE",
+            )
+            for item in response.json()
+            if item.get("id")
+            and item.get("base_currency")
+            and item.get("quote_currency")
+            and item.get("status") == "online"
+            and not item.get("trading_disabled", False)
+            and item.get("quote_currency") in {"USD", "USDC"}
+            and item.get("base_currency") not in {"USD", "USDC"}
+        ]
