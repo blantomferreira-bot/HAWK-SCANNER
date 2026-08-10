@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from collections.abc import Callable, Coroutine
 from typing import Any
 
@@ -13,9 +14,26 @@ from hawk_scheduler.config import daily_learning_hour_utc, scan_interval_minutes
 
 logger = logging.getLogger(__name__)
 
+_WORKER_URL_PATTERN = re.compile(r"^(https?://[A-Za-z0-9.-]+(?::\d{1,5})?)")
+
+
+def worker_base_url() -> str:
+    """Return the internal worker URL, rejecting malformed configuration early.
+
+    Railway environment-variable interpolation is occasionally pasted together
+    with the next variable.  Keeping the valid URL prefix prevents that
+    configuration typo from disabling every scheduled scan, while malformed
+    values still fail with an actionable error.
+    """
+    raw_value = os.getenv("WORKER_URL", "http://worker:8001").strip()
+    match = _WORKER_URL_PATTERN.match(raw_value)
+    if match is None:
+        raise ValueError("WORKER_URL must start with an http(s) worker URL")
+    return match.group(1).rstrip("/")
+
 
 async def trigger_scan() -> None:
-    worker_url = os.getenv("WORKER_URL", "http://worker:8001").rstrip("/")
+    worker_url = worker_base_url()
     token = os.getenv("INTERNAL_SCHEDULER_TOKEN", "")
     if not token:
         raise RuntimeError("INTERNAL_SCHEDULER_TOKEN is required")
@@ -25,7 +43,7 @@ async def trigger_scan() -> None:
 
 
 async def trigger_daily_learning() -> None:
-    worker_url = os.getenv("WORKER_URL", "http://worker:8001").rstrip("/")
+    worker_url = worker_base_url()
     token = os.getenv("INTERNAL_SCHEDULER_TOKEN", "")
     if not token:
         raise RuntimeError("INTERNAL_SCHEDULER_TOKEN is required")

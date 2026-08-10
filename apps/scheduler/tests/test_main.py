@@ -1,7 +1,19 @@
 import asyncio
 import logging
 
-from hawk_scheduler.main import run_job_safely
+from hawk_scheduler.main import run_job_safely, worker_base_url
+
+
+def test_worker_base_url_preserves_valid_url(monkeypatch):
+    monkeypatch.setenv("WORKER_URL", "https://hawk-worker.internal:8001")
+
+    assert worker_base_url() == "https://hawk-worker.internal:8001"
+
+
+def test_worker_base_url_recovers_from_concatenated_railway_variable(monkeypatch):
+    monkeypatch.setenv("WORKER_URL", "http://hawk-worker.internal:8001DATABASE_URL=postgresql://ignored")
+
+    assert worker_base_url() == "http://hawk-worker.internal:8001"
 
 
 def test_scheduler_job_failure_is_contained(caplog):
