@@ -32,6 +32,10 @@ class CoinGeckoPublicProvider:
         "global-dollar", "frax", "true-usd", "paxos-standard", "liquity-usd", "usdd", "usde",
     })
     fallback_non_speculative_ids = frozenset({"pax-gold", "tether-gold"})
+    fallback_memecoin_ids = frozenset({
+        "dogecoin", "shiba-inu", "pepe", "bonk", "dogwifcoin", "floki", "official-trump", "spx6900",
+        "brett", "popcat", "mog-coin", "cat-in-a-dogs-world", "goatseus-maximus", "fartcoin",
+    })
 
     def __init__(self, api_key: str = "") -> None:
         self.api_key = api_key
@@ -88,6 +92,10 @@ class CoinGeckoPublicProvider:
             coin_id: {"stablecoin": False, "excluded": True, "reason": "rwa-fallback"}
             for coin_id in self.fallback_non_speculative_ids
         })
+        classifications.update({
+            coin_id: {"stablecoin": False, "excluded": True, "reason": "memecoin-fallback"}
+            for coin_id in self.fallback_memecoin_ids
+        })
         try:
             categories_response = await client.get(self.categories_endpoint, headers=self.headers)
             categories_response.raise_for_status()
@@ -102,21 +110,31 @@ class CoinGeckoPublicProvider:
                     targets.append((category_id, "stablecoin", True))
                 elif "real world asset" in name or "tokenized treasury" in name or "tokenized fund" in name:
                     targets.append((category_id, "non-speculative-category", False))
+                elif "meme" in name:
+                    targets.append((category_id, "memecoin-category", False))
             for category_id, reason, is_stablecoin in targets:
-                response = await client.get(
-                    self.endpoint,
-                    params={"vs_currency": "usd", "category": category_id, "per_page": 250, "page": 1},
-                    headers=self.headers,
-                )
-                response.raise_for_status()
-                for item in response.json():
-                    coin_id = item.get("id")
-                    if coin_id:
-                        classifications[str(coin_id)] = {
-                            "stablecoin": is_stablecoin,
-                            "excluded": True,
-                            "reason": reason,
-                        }
+                page = 1
+                while True:
+                    response = await client.get(
+                        self.endpoint,
+                        params={"vs_currency": "usd", "category": category_id, "per_page": 250, "page": page},
+                        headers=self.headers,
+                    )
+                    response.raise_for_status()
+                    category_coins = response.json()
+                    if not isinstance(category_coins, list):
+                        break
+                    for item in category_coins:
+                        coin_id = item.get("id")
+                        if coin_id:
+                            classifications[str(coin_id)] = {
+                                "stablecoin": is_stablecoin,
+                                "excluded": True,
+                                "reason": reason,
+                            }
+                    if len(category_coins) < 250:
+                        break
+                    page += 1
         except httpx.HTTPError as error:
             logger.warning("CoinGecko universe classification unavailable; applying stablecoin safety fallback", exc_info=error)
         return classifications

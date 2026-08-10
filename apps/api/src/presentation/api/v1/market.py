@@ -90,7 +90,9 @@ async def ranking(
                    AND COALESCE(c.metadata ->> 'coingecko_id', c.slug) NOT IN (
                      'tether', 'usd-coin', 'dai', 'usd1', 'usd1-wlfi', 'first-digital-usd', 'paypal-usd', 'ethena-usde',
                      'usds', 'global-dollar', 'frax', 'true-usd', 'paxos-standard', 'liquity-usd', 'usdd', 'usde',
-                     'pax-gold', 'tether-gold'
+                     'pax-gold', 'tether-gold', 'dogecoin', 'shiba-inu', 'pepe', 'bonk', 'dogwifcoin', 'floki',
+                     'official-trump', 'spx6900', 'brett', 'popcat', 'mog-coin', 'cat-in-a-dogs-world',
+                     'goatseus-maximus', 'fartcoin'
                    )
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (

@@ -27,11 +27,17 @@ def test_binance_volume_can_complete_an_otherwise_eligible_coin_snapshot():
     assert states["eligible"].spot_volume == 200_000.0
 
 
-def test_states_exclude_pegged_or_other_ineligible_universe_assets():
+def test_states_exclude_pegged_memecoin_or_other_ineligible_universe_assets():
     states, _ = ScannerService._states(
-        [CoinSnapshot("stable", "USDX", 1.0, 50_000_000.0, 500_000.0, "coingecko")],
-        [MarketSnapshot("stable", "stable-market", "USDXUSDT", 1.0, 500_000.0, None, None, None, "binance")],
-        {"stable"},
+        [
+            CoinSnapshot("stable", "USDX", 1.0, 50_000_000.0, 500_000.0, "coingecko"),
+            CoinSnapshot("meme", "MEME", 1.0, 50_000_000.0, 500_000.0, "coingecko"),
+        ],
+        [
+            MarketSnapshot("stable", "stable-market", "USDXUSDT", 1.0, 500_000.0, None, None, None, "binance"),
+            MarketSnapshot("meme", "meme-market", "MEMEUSDT", 1.0, 500_000.0, None, None, None, "binance"),
+        ],
+        {"stable", "meme"},
     )
 
     assert states == {}
