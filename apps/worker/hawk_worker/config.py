@@ -48,7 +48,9 @@ class ScannerSettings:
             smtp_from=os.getenv("SMTP_FROM") or None,
             alert_email_to=recipients,
             ml_artifact_dir=os.getenv("ML_ARTIFACT_DIR", "/var/lib/hawk-models"),
-            require_all_data_sources=os.getenv("REQUIRE_ALL_DATA_SOURCES", "true").lower() == "true",
+            # Public sources are sufficient for an operational base scanner.
+            # Optional providers remain audited, but missing private keys never stop a scan.
+            require_all_data_sources=os.getenv("REQUIRE_ALL_DATA_SOURCES", "false").lower() == "true",
             coingecko_catalog_pages=catalog_pages,
             catalog_refresh_seconds=catalog_refresh_seconds,
             source_api_keys={

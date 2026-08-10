@@ -32,7 +32,7 @@ async def list_coins(
                       c.decimals, c.is_active, c.metadata, lmc.market_cap
                FROM coins c
                LEFT JOIN latest_market_caps lmc ON lmc.coin_id = c.id
-               WHERE (:search IS NULL OR symbol ILIKE :pattern OR name ILIKE :pattern)
+               WHERE (CAST(:search AS text) IS NULL OR symbol ILIKE :pattern OR name ILIKE :pattern)
                  AND (:active_only = false OR is_active = true)
                ORDER BY lmc.market_cap DESC NULLS LAST, c.symbol ASC
                LIMIT :limit OFFSET :offset""",
@@ -78,8 +78,8 @@ async def ranking(
                         s.factors, s.calculated_at, c.symbol, c.name
                  FROM scores s
                  JOIN coins c ON c.id = s.coin_id
-                 WHERE (:model_version IS NULL OR s.model_version = :model_version)
-                   AND (:direction IS NULL OR s.direction::text = :direction)
+                 WHERE (CAST(:model_version AS text) IS NULL OR s.model_version = CAST(:model_version AS text))
+                   AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (
                  SELECT DISTINCT ON (coin_id) coin_id, value AS price
@@ -119,7 +119,7 @@ async def similarity(
                  SELECT DISTINCT ON (model_type) id, model_type, label_definition, trained_at
                  FROM ml_training_runs
                  WHERE status = 'COMPLETED'
-                   AND (:model_type IS NULL OR model_type = :model_type)
+                   AND (CAST(:model_type AS text) IS NULL OR model_type = CAST(:model_type AS text))
                  ORDER BY model_type, trained_at DESC NULLS LAST, created_at DESC
                )
                SELECT ms.id, ms.coin_id, c.symbol, c.name, ms.score, ms.model_probability,
@@ -127,7 +127,7 @@ async def similarity(
                FROM ml_similarity_scores ms
                JOIN latest_training lt ON lt.id = ms.training_run_id
                JOIN coins c ON c.id = ms.coin_id
-               WHERE (:coin_id IS NULL OR ms.coin_id = :coin_id)
+               WHERE (CAST(:coin_id AS text) IS NULL OR ms.coin_id = CAST(:coin_id AS text))
                ORDER BY ms.score DESC, ms.calculated_at DESC
                LIMIT :limit""",
             {"coin_id": coin_id, "model_type": model_type, "limit": limit},
@@ -153,11 +153,11 @@ async def metrics(
         rows = await SqlRepository(session).many(
             """SELECT id, coin_id, market_id, type, interval, value, source, observed_at, metadata
                FROM metrics
-               WHERE (:coin_id IS NULL OR coin_id = :coin_id)
-                 AND (:market_id IS NULL OR market_id = :market_id)
-                 AND (:metric_type IS NULL OR type::text = :metric_type)
-                 AND (:start_at IS NULL OR observed_at >= :start_at)
-                 AND (:end_at IS NULL OR observed_at <= :end_at)
+               WHERE (CAST(:coin_id AS text) IS NULL OR coin_id = CAST(:coin_id AS text))
+                 AND (CAST(:market_id AS text) IS NULL OR market_id = CAST(:market_id AS text))
+                 AND (CAST(:metric_type AS text) IS NULL OR type::text = CAST(:metric_type AS text))
+                 AND (CAST(:start_at AS timestamptz) IS NULL OR observed_at >= CAST(:start_at AS timestamptz))
+                 AND (CAST(:end_at AS timestamptz) IS NULL OR observed_at <= CAST(:end_at AS timestamptz))
                ORDER BY observed_at DESC LIMIT :limit""",
             {"coin_id": coin_id, "market_id": market_id, "metric_type": metric_type,
              "start_at": start_at, "end_at": end_at, "limit": limit},
@@ -175,7 +175,7 @@ async def funding(session: DbSession, market_id: str | None = None, limit: int =
         rows = await SqlRepository(session).many(
             """SELECT f.id, f.market_id, m.symbol, f.rate, f.mark_price, f.next_funding_at, f.source, f.observed_at
                FROM funding f JOIN markets m ON m.id = f.market_id
-               WHERE (:market_id IS NULL OR f.market_id = :market_id)
+               WHERE (CAST(:market_id AS text) IS NULL OR f.market_id = CAST(:market_id AS text))
                ORDER BY f.observed_at DESC LIMIT :limit""",
             {"market_id": market_id, "limit": limit},
         )
@@ -192,7 +192,7 @@ async def open_interest(session: DbSession, market_id: str | None = None, limit:
         rows = await SqlRepository(session).many(
             """SELECT oi.id, oi.market_id, m.symbol, oi.value, oi.value_usd, oi.source, oi.observed_at
                FROM open_interest oi JOIN markets m ON m.id = oi.market_id
-               WHERE (:market_id IS NULL OR oi.market_id = :market_id)
+               WHERE (CAST(:market_id AS text) IS NULL OR oi.market_id = CAST(:market_id AS text))
                ORDER BY oi.observed_at DESC LIMIT :limit""",
             {"market_id": market_id, "limit": limit},
         )
@@ -212,8 +212,8 @@ async def liquidations(
         rows = await SqlRepository(session).many(
             """SELECT id, market_id, exchange_id, side, price, quantity, value_usd, source, liquidated_at, metadata
                FROM liquidations
-               WHERE (:market_id IS NULL OR market_id = :market_id)
-                 AND (:exchange_id IS NULL OR exchange_id = :exchange_id)
+               WHERE (CAST(:market_id AS text) IS NULL OR market_id = CAST(:market_id AS text))
+                 AND (CAST(:exchange_id AS text) IS NULL OR exchange_id = CAST(:exchange_id AS text))
                ORDER BY liquidated_at DESC LIMIT :limit""",
             {"market_id": market_id, "exchange_id": exchange_id, "limit": limit},
         )
@@ -231,7 +231,7 @@ async def holders(session: DbSession, coin_id: str | None = None, limit: int = Q
             """SELECT w.id, w.address, w.network, w.coin_id, w.label, w.entity_name, w.is_exchange,
                       wh.classification, wh.confidence, wh.estimated_value_usd, wh.tags
                FROM wallets w LEFT JOIN whales wh ON wh.wallet_id = w.id
-               WHERE (:coin_id IS NULL OR w.coin_id = :coin_id)
+               WHERE (CAST(:coin_id AS text) IS NULL OR w.coin_id = CAST(:coin_id AS text))
                ORDER BY wh.estimated_value_usd DESC NULLS LAST, w.last_seen_at DESC NULLS LAST
                LIMIT :limit""",
             {"coin_id": coin_id, "limit": limit},
@@ -249,7 +249,7 @@ async def score(session: DbSession, coin_id: str, model_version: str | None = No
         row = await SqlRepository(session).one(
             """SELECT id, coin_id, market_id, model_version, value, confidence, direction, factors, calculated_at, expires_at
                FROM scores WHERE coin_id = :coin_id
-                 AND (:model_version IS NULL OR model_version = :model_version)
+                 AND (CAST(:model_version AS text) IS NULL OR model_version = CAST(:model_version AS text))
                ORDER BY calculated_at DESC LIMIT 1""",
             {"coin_id": coin_id, "model_version": model_version},
         )

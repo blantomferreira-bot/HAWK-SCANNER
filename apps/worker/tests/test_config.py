@@ -13,9 +13,9 @@ def test_scanner_settings_reject_invalid_catalog_pages(monkeypatch):
         raise AssertionError("invalid catalog page count was accepted")
 
 
-def test_scanner_settings_preserves_fail_closed_default(monkeypatch):
+def test_scanner_settings_allows_public_data_default(monkeypatch):
     monkeypatch.delenv("REQUIRE_ALL_DATA_SOURCES", raising=False)
     monkeypatch.setenv("COINGECKO_CATALOG_PAGES", "1")
     monkeypatch.setenv("CATALOG_REFRESH_SECONDS", "3600")
 
-    assert ScannerSettings.from_environment().require_all_data_sources is True
+    assert ScannerSettings.from_environment().require_all_data_sources is False

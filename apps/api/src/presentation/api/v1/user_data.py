@@ -95,7 +95,7 @@ async def remove_watchlist_coin(watchlist_id: str, coin_id: str, user: CurrentUs
 async def list_alerts(user: CurrentUser, session: DbSession, status_filter: str | None = Query(default=None, alias="status")):
     rows = await SqlRepository(session).many(
         """SELECT id, coin_id, type, channel, status, name, conditions, cooldown_secs, last_triggered_at, created_at, updated_at
-           FROM alerts WHERE user_id = :user_id AND (:status IS NULL OR status::text = :status) ORDER BY created_at DESC""",
+           FROM alerts WHERE user_id = :user_id AND (CAST(:status AS text) IS NULL OR status::text = CAST(:status AS text)) ORDER BY created_at DESC""",
         {"user_id": user["id"], "status": status_filter},
     )
     return {"data": rows, "meta": {}}
