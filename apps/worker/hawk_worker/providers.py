@@ -33,11 +33,12 @@ class CoinGeckoPublicProvider:
     })
     fallback_non_speculative_ids = frozenset({
         "pax-gold", "tether-gold", "spacex-bstocks-tokenized-stock", "micron-technology-bstock",
-        "blackrock-usd-institutional-digital-liquidity-fund",
+        "blackrock-usd-institutional-digital-liquidity-fund", "circle-internet-group-bstock",
     })
     fallback_memecoin_ids = frozenset({
         "dogecoin", "shiba-inu", "pepe", "bonk", "dogwifcoin", "floki", "official-trump", "spx6900",
         "brett", "popcat", "mog-coin", "cat-in-a-dogs-world", "goatseus-maximus", "fartcoin", "banana-for-scale-2",
+        "melania-meme",
     })
 
     def __init__(self, api_key: str = "") -> None:

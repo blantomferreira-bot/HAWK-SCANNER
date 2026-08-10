@@ -71,7 +71,7 @@ async def ranking(
 ):
     settings = get_settings()
     key = (
-        f"ranking:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
+        f"ranking:v2:{model_version or 'latest'}:{direction or 'all'}:{limit}:"
         f"cap:{settings.min_target_market_cap_usd}:{settings.max_target_market_cap_usd}"
     )
 
@@ -87,13 +87,16 @@ async def ranking(
                    AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
                    AND c.asset_type <> 'STABLECOIN'
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
+                   AND lower(c.name) NOT LIKE '%meme%'
+                   AND lower(c.name) NOT LIKE '%tokenized%'
                    AND COALESCE(c.metadata ->> 'coingecko_id', c.slug) NOT IN (
                      'tether', 'usd-coin', 'dai', 'usd1', 'usd1-wlfi', 'first-digital-usd', 'paypal-usd', 'ethena-usde',
                      'usds', 'global-dollar', 'frax', 'true-usd', 'paxos-standard', 'liquity-usd', 'usdd', 'usde',
                      'pax-gold', 'tether-gold', 'spacex-bstocks-tokenized-stock', 'micron-technology-bstock',
-                     'blackrock-usd-institutional-digital-liquidity-fund', 'dogecoin', 'shiba-inu', 'pepe', 'bonk', 'dogwifcoin', 'floki',
+                     'blackrock-usd-institutional-digital-liquidity-fund', 'circle-internet-group-bstock',
+                     'dogecoin', 'shiba-inu', 'pepe', 'bonk', 'dogwifcoin', 'floki',
                      'official-trump', 'spx6900', 'brett', 'popcat', 'mog-coin', 'cat-in-a-dogs-world',
-                     'goatseus-maximus', 'fartcoin', 'banana-for-scale-2'
+                     'goatseus-maximus', 'fartcoin', 'banana-for-scale-2', 'melania-meme'
                    )
                  ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
                ), latest_price AS (
