@@ -77,14 +77,10 @@ async def ranking(
 
     async def load():
         rows = await SqlRepository(session).many(
-            """WITH latest_scores AS (
-                 SELECT DISTINCT ON (s.coin_id, COALESCE(s.market_id, ''))
-                        s.id, s.coin_id, s.market_id, s.model_version, s.value, s.confidence, s.direction,
-                        s.factors, s.calculated_at, c.symbol, c.name, c.asset_type, c.metadata
-                 FROM scores s
-                 JOIN coins c ON c.id = s.coin_id
-                 WHERE (CAST(:model_version AS text) IS NULL OR s.model_version = CAST(:model_version AS text))
-                   AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
+            """WITH eligible_coins AS (
+                 SELECT c.id, c.symbol, c.name
+                 FROM coins c
+                 WHERE c.is_active = true
                    AND c.asset_type <> 'STABLECOIN'
                    AND COALESCE(c.metadata ->> 'scanner_eligible', 'true') = 'true'
                    AND COALESCE(c.metadata ->> 'exchange_listing_eligible', 'false') = 'true'
@@ -118,50 +114,51 @@ async def ranking(
                      'turbo', 'comedian', 'peanut-the-squirrel', 'jelly-my-jelly', 'the-black-bull', 'book-of-meme',
                      'dog-go-to-the-moon-rune', 'dogelon-mars', 'cash-cat', 'baby-claw', 'public-meme-token', 'capybobo'
                    )
-                 ORDER BY s.coin_id, COALESCE(s.market_id, ''), s.calculated_at DESC
-               ), latest_price AS (
-                 SELECT DISTINCT ON (coin_id) coin_id, value AS price
-                 FROM metrics WHERE type = 'PRICE' AND market_id IS NULL
-                 ORDER BY coin_id, observed_at DESC
-               ), latest_coin_volume AS (
-                 SELECT DISTINCT ON (coin_id) coin_id, value AS volume
-                 FROM metrics WHERE type = 'VOLUME' AND market_id IS NULL
-                 ORDER BY coin_id, observed_at DESC
-               ), latest_market_volume_by_market AS (
-                 SELECT DISTINCT ON (coin_id, market_id) coin_id, market_id, value AS volume
-                 FROM metrics WHERE type = 'VOLUME' AND market_id IS NOT NULL
-                 ORDER BY coin_id, market_id, observed_at DESC
-               ), latest_market_volume AS (
-                 SELECT coin_id, SUM(volume) AS volume
-                 FROM latest_market_volume_by_market
-                 GROUP BY coin_id
-               ), latest_market_cap AS (
-                 SELECT DISTINCT ON (coin_id) coin_id, value AS market_cap
-                 FROM metrics WHERE type = 'MARKET_CAP' AND market_id IS NULL
-                 ORDER BY coin_id, observed_at DESC
                )
-               -- The ranking is a compact read model for the terminal.  Do not
-               -- expose the full score factor JSON here: it can contain
-               -- provider-specific data that is not required by the table and
-               -- can make a single malformed historical payload break the
-               -- whole ranking response.
-               SELECT ls.coin_id,
-                      ls.model_version,
-                      ls.value::double precision AS value,
-                      ls.confidence::double precision AS confidence,
-                      ls.direction::text AS direction,
-                      ls.calculated_at,
-                      lp.price::double precision AS price,
-                      COALESCE(NULLIF(lcv.volume, 0), lmv.volume)::double precision AS volume,
-                      lmc.market_cap::double precision AS market_cap
-               FROM latest_scores ls
-               JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id
-                 AND lmc.market_cap BETWEEN :min_target_market_cap_usd AND :max_target_market_cap_usd
-               LEFT JOIN latest_price lp ON lp.coin_id = ls.coin_id
-               LEFT JOIN latest_coin_volume lcv ON lcv.coin_id = ls.coin_id
-               LEFT JOIN latest_market_volume lmv ON lmv.coin_id = ls.coin_id
-               WHERE COALESCE(NULLIF(lcv.volume, 0), lmv.volume, 0) > 0
-               ORDER BY value DESC, confidence DESC, calculated_at DESC
+               SELECT c.id AS coin_id,
+                      c.symbol,
+                      c.name,
+                      score.model_version,
+                      score.value::double precision AS value,
+                      score.confidence::double precision AS confidence,
+                      score.direction::text AS direction,
+                      score.calculated_at,
+                      price.value::double precision AS price,
+                      volume.value::double precision AS volume,
+                      market_cap.value::double precision AS market_cap
+               FROM eligible_coins c
+               JOIN LATERAL (
+                 SELECT s.model_version, s.value, s.confidence, s.direction, s.calculated_at
+                 FROM scores s
+                 WHERE s.coin_id = c.id
+                   AND s.market_id IS NULL
+                   AND (CAST(:model_version AS text) IS NULL OR s.model_version = CAST(:model_version AS text))
+                   AND (CAST(:direction AS text) IS NULL OR s.direction::text = CAST(:direction AS text))
+                 ORDER BY s.calculated_at DESC
+                 LIMIT 1
+               ) score ON true
+               JOIN LATERAL (
+                 SELECT m.value
+                 FROM metrics m
+                 WHERE m.coin_id = c.id AND m.market_id IS NULL AND m.type = 'MARKET_CAP'
+                 ORDER BY m.observed_at DESC
+                 LIMIT 1
+               ) market_cap ON market_cap.value BETWEEN :min_target_market_cap_usd AND :max_target_market_cap_usd
+               JOIN LATERAL (
+                 SELECT m.value
+                 FROM metrics m
+                 WHERE m.coin_id = c.id AND m.market_id IS NULL AND m.type = 'VOLUME' AND m.value > 0
+                 ORDER BY m.observed_at DESC
+                 LIMIT 1
+               ) volume ON true
+               LEFT JOIN LATERAL (
+                 SELECT m.value
+                 FROM metrics m
+                 WHERE m.coin_id = c.id AND m.market_id IS NULL AND m.type = 'PRICE'
+                 ORDER BY m.observed_at DESC
+                 LIMIT 1
+               ) price ON true
+               ORDER BY score.value DESC, score.confidence DESC, score.calculated_at DESC
                LIMIT :limit""",
             {
                 "model_version": model_version,

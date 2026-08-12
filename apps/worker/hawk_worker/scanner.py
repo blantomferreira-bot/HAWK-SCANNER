@@ -65,8 +65,6 @@ class ScannerService:
                     "coingecko", "AVAILABLE" if coin_snapshots else "FAILED",
                     "catalog market data" if catalog_snapshots else "snapshot market data",
                 )
-                await repository.persist_coin_snapshots(coin_snapshots, started_at)
-                await repository.persist_market_snapshots(market_snapshots, started_at)
                 excluded_coin_ids = {
                     coin["id"]
                     for coin in coins
@@ -80,6 +78,19 @@ class ScannerService:
                     excluded_coin_ids,
                     self.settings.min_target_market_cap_usd,
                     self.settings.max_target_market_cap_usd,
+                )
+                # Keep the ten-minute time series focused on the actual scanner
+                # universe. Persisting the entire provider catalog exhausted the
+                # small PostgreSQL volume and was never used by ranking or score
+                # calibration.
+                target_coin_ids = set(states)
+                await repository.persist_coin_snapshots(
+                    [snapshot for snapshot in coin_snapshots if snapshot.coin_id in target_coin_ids],
+                    started_at,
+                )
+                await repository.persist_market_snapshots(
+                    [snapshot for snapshot in market_snapshots if snapshot.coin_id in target_coin_ids],
+                    started_at,
                 )
                 realized_returns = {
                     coin_id: current_prices[coin_id] / previous_prices[coin_id] - 1
