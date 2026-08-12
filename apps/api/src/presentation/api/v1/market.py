@@ -140,7 +140,20 @@ async def ranking(
                  FROM metrics WHERE type = 'MARKET_CAP' AND market_id IS NULL
                  ORDER BY coin_id, observed_at DESC
                )
-               SELECT ls.*, lp.price, COALESCE(NULLIF(lcv.volume, 0), lmv.volume) AS volume, lmc.market_cap
+               -- The ranking is a compact read model for the terminal.  Do not
+               -- expose the full score factor JSON here: it can contain
+               -- provider-specific data that is not required by the table and
+               -- can make a single malformed historical payload break the
+               -- whole ranking response.
+               SELECT ls.coin_id,
+                      ls.model_version,
+                      ls.value::double precision AS value,
+                      ls.confidence::double precision AS confidence,
+                      ls.direction::text AS direction,
+                      ls.calculated_at,
+                      lp.price::double precision AS price,
+                      COALESCE(NULLIF(lcv.volume, 0), lmv.volume)::double precision AS volume,
+                      lmc.market_cap::double precision AS market_cap
                FROM latest_scores ls
                JOIN latest_market_cap lmc ON lmc.coin_id = ls.coin_id
                  AND lmc.market_cap BETWEEN :min_target_market_cap_usd AND :max_target_market_cap_usd
